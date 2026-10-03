@@ -466,6 +466,8 @@ input:focus,select:focus{outline:3px solid var(--ring);border-color:var(--blue)}
 .ftable td{padding:5px 8px;color:var(--text);white-space:nowrap;font-variant-numeric:tabular-nums}
 .ftable tbody tr:nth-child(even) td{background:var(--stripe)}
 .ftable tr[role=button]{cursor:default}
+.ftable.sum tr[role=button]{cursor:pointer}
+.ftable.sum tr[role=button]:hover td{background:var(--sel-row)}
 .ftable tr[role=button]:hover td{background:var(--sel-row)}
 .ftable tr.sel td{background:var(--blue) !important;color:var(--on-accent)}
 .ftable .nm{display:inline-flex;align-items:center;gap:8px;max-width:100%}
@@ -514,6 +516,7 @@ input:focus,select:focus{outline:3px solid var(--ring);border-color:var(--blue)}
 .day-row.editing{background:var(--sel-row)}
 .day-row .dr-main{flex:1;min-width:0}
 .day-row .dr-main b{font-weight:600}
+.day-row .dr-main .jbadge{margin-left:5px;vertical-align:1px}
 .day-row .dr-main small{display:block;color:var(--gray);font-size:11.5px}
 .day-row .dr-btns{display:flex;gap:4px}
 .day-empty{padding:9px 10px;color:var(--gray2);font-size:12px}
@@ -553,11 +556,18 @@ input:focus,select:focus{outline:3px solid var(--ring);border-color:var(--blue)}
 /* 토스트 */
 .toast{
   position:fixed;left:50%;bottom:28px;z-index:60;transform:translate(-50%,10px);
-  max-width:calc(100% - 32px);padding:8px 14px;border-radius:8px;
+  max-width:calc(100% - 32px);padding:8px 10px 8px 14px;border-radius:8px;
   background:var(--toast-bg);color:var(--toast-fg);font-size:12.5px;
+  display:flex;align-items:center;gap:10px;
   opacity:0;pointer-events:none;transition:.2s;
 }
 .toast.show{opacity:1;transform:translate(-50%,0)}
+.toast.has-btn{pointer-events:auto}       /* 버튼이 있을 때만 눌리게 (평소엔 뒤를 가리지 않게) */
+.toast-btn{
+  flex:none;border:0;border-radius:6px;padding:5px 10px;
+  background:rgba(255,255,255,.2);color:inherit;font-size:12.5px;font-weight:600;
+}
+.toast-btn:hover{background:rgba(255,255,255,.32)}
 
 /* ============================================
    밤 모드: 심해 야광 (색은 위 변수, 여기는 빛나는 효과만)

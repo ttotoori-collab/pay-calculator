@@ -384,7 +384,7 @@ function renderToolbar() {
 /* 패널·메뉴를 여는 툴바 버튼: 열려 있으면 회색 배경(.on), 닫히면 배경 없음 */
 function syncPanelButtons() {
   const set = (el, on) => { if (!el) return; el.classList.toggle('on', on); el.setAttribute('aria-expanded', String(on)); };
-  set($('#tagBtn'), sheetKind === 'job' && !!jobEdit && !jobEdit.id);   // "새 알바 등록" 패널
+  set($('#tagBtn'), sheetKind === 'jobs' || (sheetKind === 'job' && !!jobEdit && !jobEdit.id));   // 알바 관리 패널
   set($('#menuBtn'), !$('#menu').hidden);                              // ⋯ 메뉴
   set($('#searchBtn'), ui.searchOpen);                                 // 돋보기
   set($('#monthBtn'), ymOpen);                                         // 연도·월 고르기
@@ -505,7 +505,7 @@ function listTable(list, opts = {}) {
 }
 
 function summaryTable(c) {
-  const rows = c.jobs.map(r => `<tr>
+  const rows = c.jobs.map(r => `<tr role="button" tabindex="0" data-action="edit-job" data-id="${esc(r.job.id)}" title="${esc(r.job.name)} 수정">
       <td data-label="알바"><span class="nm"><span class="dot" style="background:${r.job.color}"></span><span>${esc(r.job.name)}</span></span> <span class="sub">${won(r.job.wage)}/시</span></td>
       <td data-label="근무시간" class="r">${fmtH(r.minutes)}</td>
       <td data-label="기본급" class="r">${won(r.base)}</td>
@@ -579,7 +579,8 @@ function renderJobs() {
       <td data-label="${ui.m + 1}월 금액" class="r strong">${won(r.total)}</td></tr>`).join('');
   content.innerHTML = `
     <div class="sec-title">Jobs <small>눌러서 수정·삭제</small>
-      <button type="button" class="mbtn small push" data-action="add-job">+ 알바 등록</button></div>
+      <button type="button" class="mbtn small push" data-action="manage-jobs">알바 관리</button>
+      <button type="button" class="mbtn small" data-action="add-job">+ 알바 등록</button></div>
     <table class="ftable sum">
       <thead><tr><th>이름</th><th class="r">시급</th><th class="r">${ui.m + 1}월 근무</th><th class="r">${ui.m + 1}월 금액</th></tr></thead>
       <tbody>${rows}</tbody></table>
@@ -824,7 +825,48 @@ function deleteShift(id) {
   toast('삭제했어요.');
 }
 
-/* ---------- 알바 등록 시트 ---------- */
+/* ---------- 알바 관리 시트 ---------- */
+/* 알바를 한곳에서 보고 바로 수정·삭제할 수 있는 창이에요. */
+const shiftCount = jobId => state.shifts.filter(s => s.jobId === jobId).length;
+
+function jobsSheetHTML() {
+  const rows = state.jobs.map(j => {
+    const n = shiftCount(j.id);
+    return `<div class="day-row">
+      <span class="dot" style="background:${j.color}"></span>
+      <div class="dr-main">
+        <b>${esc(j.name)}</b>${j.weeklyBonus ? '<span class="jbadge">주휴</span>' : ''}
+        <small>${won(j.wage)}/시 · 근무 기록 ${n}개</small>
+      </div>
+      <div class="dr-btns">
+        <button type="button" class="mbtn small" data-action="edit-job" data-id="${esc(j.id)}">수정</button>
+        <button type="button" class="mbtn small danger" data-action="del-job" data-id="${esc(j.id)}">삭제</button>
+      </div></div>`;
+  }).join('');
+  return `
+    <div class="sheet-head" id="sheetTitle">알바 관리</div>
+    <div class="sheet-body">
+      <div class="day-list">${rows || '<div class="day-empty">등록한 알바가 없어요.</div>'}</div>
+      <p class="hint" style="margin-left:0">알바를 지우면 그 알바의 근무 기록도 함께 지워져요. 지운 뒤 5초 안에는 되돌릴 수 있어요.</p>
+    </div>
+    <div class="sheet-foot">
+      <button type="button" class="mbtn" data-action="add-job">+ 새 알바 등록</button>
+      <span class="spacer"></span>
+      <button type="button" class="mbtn blue" data-action="close-sheet">닫기</button>
+    </div>`;
+}
+
+function openJobsSheet() {
+  if (!state.jobs.length) { openJobSheet(); return; }   // 하나도 없으면 바로 등록 화면
+  openSheet('jobs', jobsSheetHTML());
+}
+/* 지우거나 되돌린 뒤 목록만 다시 그려요 (시트가 다시 내려오지 않게) */
+function refreshJobsSheet() {
+  if (sheetKind !== 'jobs') return;
+  sheetEl.innerHTML = jobsSheetHTML();
+}
+
+/* ---------- 알바 등록·수정 시트 ---------- */
 let jobEdit = null;
 
 function openJobSheet(id) {
@@ -851,7 +893,7 @@ function openJobSheet(id) {
       <p class="hint">2026년 최저시급은 10,320원이에요.</p>
     </form>
     <div class="sheet-foot">
-      ${j ? '<button type="button" class="mbtn plain" data-action="del-job">알바 삭제</button>' : ''}
+      ${j ? `<button type="button" class="mbtn plain" data-action="del-job" data-id="${esc(j.id)}">알바 삭제</button>` : ''}
       <span class="spacer"></span>
       <button type="button" class="mbtn" data-action="close-sheet">취소</button>
       <button type="submit" class="mbtn blue" form="jobForm">저장</button>
@@ -878,15 +920,34 @@ function submitJob() {
   save(); closeSheet(); renderAll();
 }
 
-function deleteJob() {
-  const j = jobById(jobEdit && jobEdit.id); if (!j) return;
-  const n = state.shifts.filter(s => s.jobId === j.id).length;
-  if (!confirm(`"${j.name}"을(를) 삭제할까요?${n ? `\n이 알바의 근무 기록 ${n}개도 함께 지워져요.` : ''}`)) return;
-  state.jobs = state.jobs.filter(x => x.id !== j.id);
+/* 알바 삭제 — 근무 기록이 없으면 바로, 있으면 물어보고. 둘 다 5초 안에 되돌릴 수 있어요. */
+function removeJob(id) {
+  const j = jobById(id); if (!j) return;
+  const at = state.jobs.indexOf(j);                       // 되돌릴 때 순서까지 그대로
+  const gone = state.shifts.filter(s => s.jobId === j.id);
+  if (gone.length && !confirm(`"${j.name}"을(를) 삭제할까요?\n이 알바의 근무 기록 ${gone.length}개도 같이 지워져요.`)) return;
+
+  const back = { job: { ...j }, at, shifts: gone.map(s => ({ ...s, breaks: s.breaks.map(b => ({ ...b })) })), filter: ui.filter };
+  state.jobs.splice(at, 1);
   state.shifts = state.shifts.filter(s => s.jobId !== j.id);
   if (ui.filter === j.id) ui.filter = null;
-  save(); closeSheet(); renderAll();
-  toast('삭제했어요.');
+  save();
+
+  if (sheetKind === 'job') closeSheet();                  // 수정 시트에서 지웠을 때
+  refreshJobsSheet();
+  renderAll();
+  toast(`"${j.name}" 삭제했어요.${gone.length ? ` (근무 기록 ${gone.length}개 포함)` : ''}`, {
+    label: '실행 취소',
+    ms: 5000,
+    fn: () => {
+      if (jobById(back.job.id)) return;                   // 이미 되돌아왔으면 그냥 둠
+      state.jobs.splice(Math.min(back.at, state.jobs.length), 0, back.job);
+      state.shifts = state.shifts.concat(back.shifts);
+      ui.filter = back.filter;
+      save(); refreshJobsSheet(); renderAll();
+      toast(`"${back.job.name}" 되돌렸어요.`);
+    }
+  });
 }
 
 /* ============================================
@@ -1056,13 +1117,15 @@ function closeSearch() {
 /* ============================================
    달력 스와이프 (왼쪽 → 다음달 / 오른쪽 → 전달)
    ============================================ */
-let swipe = null, swipeGuard = 0;
+let swipe = null, clickGuard = 0;
+/* 밀거나 길게 누른 직후에 따라오는 가짜 탭을 한 번 무시해요 */
+const skipNextClick = () => { clickGuard = Date.now(); };
 const canSwipeMonth = () =>
   ui.view === 'calendar' && ui.mode === 'grid' && !ui.search.trim() &&
   sheetWrap.hidden && !!state.jobs.length;
 
 scroller.addEventListener('touchstart', e => {
-  swipeGuard = 0;
+  clickGuard = 0;
   if (e.touches.length !== 1 || !canSwipeMonth()) { swipe = null; return; }
   const t = e.touches[0];
   swipe = { x: t.clientX, y: t.clientY, dx: 0, axis: null };
@@ -1080,7 +1143,7 @@ scroller.addEventListener('touchend', e => {
   const t = swipe; swipe = null;
   if (!t || t.axis !== 'x') return;
   if (Math.abs(t.dx) > 10) {
-    swipeGuard = Date.now();        // 민 손가락이 날짜를 누른 것처럼 되지 않게
+    skipNextClick();                // 민 손가락이 날짜를 누른 것처럼 되지 않게
     if (e.cancelable) e.preventDefault();
   }
   if (Math.abs(t.dx) < 55 || !canSwipeMonth()) return;
@@ -1088,6 +1151,41 @@ scroller.addEventListener('touchend', e => {
 }, { passive: false });
 
 scroller.addEventListener('touchcancel', () => { swipe = null; }, { passive: true });
+
+/* ============================================
+   사이드바 Tags 바로가기 — 길게 누르기(휴대폰) / 오른쪽 클릭(컴퓨터) → 알바 수정
+   ============================================ */
+const sbNav = $('#sbNav');
+const tagOf = el => {
+  const b = el && el.closest ? el.closest('[data-action=filter]') : null;
+  return b && b.dataset.id ? b.dataset.id : null;    // "All Tags…"는 id가 없어서 제외
+};
+function editJobShortcut(id) {
+  closePanels();
+  openJobSheet(id);
+}
+
+let pressTimer = null;
+const cancelPress = () => { clearTimeout(pressTimer); pressTimer = null; };
+sbNav.addEventListener('touchstart', e => {
+  cancelPress();
+  const id = e.touches.length === 1 ? tagOf(e.target) : null;
+  if (!id) return;
+  pressTimer = setTimeout(() => {
+    pressTimer = null;
+    skipNextClick();                                  // 손 떼면서 태그가 눌리지 않게
+    if (navigator.vibrate) navigator.vibrate(12);
+    editJobShortcut(id);
+  }, 500);
+}, { passive: true });
+['touchmove', 'touchend', 'touchcancel'].forEach(ev => sbNav.addEventListener(ev, cancelPress, { passive: true }));
+
+document.addEventListener('contextmenu', e => {
+  const id = tagOf(e.target);
+  if (!id) return;
+  e.preventDefault();
+  editJobShortcut(id);
+});
 
 /* ============================================
    이벤트
@@ -1124,9 +1222,9 @@ function goView(v) {
 }
 
 document.addEventListener('click', e => {
-  if (swipeGuard) {   // 스와이프 직후에 생기는 가짜 탭은 한 번 넘겨요
-    const fake = Date.now() - swipeGuard < 400;
-    swipeGuard = 0;
+  if (clickGuard) {   // 밀기·길게 누르기 직후에 생기는 가짜 탭은 한 번 넘겨요
+    const fake = Date.now() - clickGuard < 500;
+    clickGuard = 0;
     if (fake) return;
   }
   // 바깥을 누르면 메뉴 닫기
@@ -1170,10 +1268,11 @@ document.addEventListener('click', e => {
       toast(ui.group ? '알바별로 묶어서 보여줘요.' : '묶어보기를 껐어요.');
       break;
     case 'share': shareImage(); break;
-    case 'add-job': openJobSheet(); break;              // 본문 안의 "알바 등록" 버튼: 항상 열기
-    case 'toggle-add-job':                                // 툴바 태그 아이콘: 열기 ↔ 닫기
-      if (sheetKind === 'job' && jobEdit && !jobEdit.id) closeSheet();   // 취소와 똑같이 닫고 입력 내용은 버림
-      else { closePanels(); openJobSheet(); }
+    case 'add-job': openJobSheet(); break;              // 본문·관리 창의 "알바 등록" 버튼: 항상 열기
+    case 'manage-jobs': closePanels(); openJobsSheet(); break;
+    case 'toggle-add-job':                                // 툴바 태그 아이콘: 알바 관리 열기 ↔ 닫기
+      if (sheetKind === 'jobs' || (sheetKind === 'job' && jobEdit && !jobEdit.id)) closeSheet();
+      else { closePanels(); openJobsSheet(); }
       break;
     case 'menu':
       if (!menuEl.hidden) closeMenu();
@@ -1253,7 +1352,8 @@ document.addEventListener('click', e => {
       jobEdit.color = t.dataset.color;
       $$('.sw').forEach(s => { const on = s.dataset.color === jobEdit.color; s.classList.toggle('on', on); s.setAttribute('aria-checked', String(on)); });
       break;
-    case 'del-job': deleteJob(); break;
+    case 'del-job': removeJob(id || (jobEdit && jobEdit.id)); break;
+    case 'toast-do': { const fn = toastFn; hideToast(); if (fn) fn(); break; }
   }
 });
 
@@ -1300,14 +1400,23 @@ document.addEventListener('keydown', e => {
 
 window.addEventListener('resize', () => { if (!isNarrow()) closeSidebar(); });
 
-/* 토스트 */
-let toastTimer = null;
-function toast(msg) {
+/* 토스트 — action을 주면 누를 수 있는 버튼이 같이 떠요 ({label, fn, ms}) */
+let toastTimer = null, toastFn = null;
+function toast(msg, action) {
   const el = $('#toast');
-  el.textContent = msg;
+  el.innerHTML = `<span>${esc(msg)}</span>` +
+    (action ? `<button type="button" class="toast-btn" data-action="toast-do">${esc(action.label)}</button>` : '');
+  el.classList.toggle('has-btn', !!action);
+  toastFn = action ? action.fn : null;
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+  toastTimer = setTimeout(hideToast, action ? (action.ms || 5000) : 2600);
+}
+function hideToast() {
+  clearTimeout(toastTimer);
+  const el = $('#toast');
+  el.classList.remove('show', 'has-btn');
+  toastFn = null;
 }
 
 /* ============================================
