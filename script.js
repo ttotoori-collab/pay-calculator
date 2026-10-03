@@ -295,7 +295,8 @@ function nextTagColor() {
 /* ============================================
    화면 그리기
    ============================================ */
-const content = $('#content');
+const content = $('#content');            // 화면을 그리는 젖빛 카드
+const scroller = $('#contentScroll');     // 그 카드를 담은 스크롤 영역 (밀기·스크롤은 여기서)
 
 function renderAll() {
   renderSidebar();
@@ -1060,14 +1061,14 @@ const canSwipeMonth = () =>
   ui.view === 'calendar' && ui.mode === 'grid' && !ui.search.trim() &&
   sheetWrap.hidden && !!state.jobs.length;
 
-content.addEventListener('touchstart', e => {
+scroller.addEventListener('touchstart', e => {
   swipeGuard = 0;
   if (e.touches.length !== 1 || !canSwipeMonth()) { swipe = null; return; }
   const t = e.touches[0];
   swipe = { x: t.clientX, y: t.clientY, dx: 0, axis: null };
 }, { passive: true });
 
-content.addEventListener('touchmove', e => {
+scroller.addEventListener('touchmove', e => {
   if (!swipe || e.touches.length !== 1) { swipe = null; return; }
   const t = e.touches[0], dx = t.clientX - swipe.x, dy = t.clientY - swipe.y;
   // 가로·세로 중 먼저 움직인 쪽으로 정해요 (세로면 그냥 스크롤)
@@ -1075,7 +1076,7 @@ content.addEventListener('touchmove', e => {
   if (swipe.axis === 'x') swipe.dx = dx;
 }, { passive: true });
 
-content.addEventListener('touchend', e => {
+scroller.addEventListener('touchend', e => {
   const t = swipe; swipe = null;
   if (!t || t.axis !== 'x') return;
   if (Math.abs(t.dx) > 10) {
@@ -1086,18 +1087,18 @@ content.addEventListener('touchend', e => {
   moveMonth(t.dx < 0 ? 1 : -1);
 }, { passive: false });
 
-content.addEventListener('touchcancel', () => { swipe = null; }, { passive: true });
+scroller.addEventListener('touchcancel', () => { swipe = null; }, { passive: true });
 
 /* ============================================
    이벤트
    ============================================ */
 /* 달이 바뀔 때 살짝 옆에서 넘어오게 */
 function slideContent(dir) {
-  content.classList.remove('slide-next', 'slide-prev');
-  void content.offsetWidth;                                 // 애니메이션 다시 시작
-  content.classList.add(dir > 0 ? 'slide-next' : 'slide-prev');
+  scroller.classList.remove('slide-next', 'slide-prev');
+  void scroller.offsetWidth;                                // 애니메이션 다시 시작
+  scroller.classList.add(dir > 0 ? 'slide-next' : 'slide-prev');
 }
-content.addEventListener('animationend', () => content.classList.remove('slide-next', 'slide-prev'));
+scroller.addEventListener('animationend', () => scroller.classList.remove('slide-next', 'slide-prev'));
 
 function moveMonth(delta) {
   const d = new Date(ui.y, ui.m + delta, 1);
@@ -1118,7 +1119,7 @@ function goView(v) {
   ui.view = v;
   if (ui.search) { ui.search = ''; ui.searchOpen = false; $('#searchInput').value = ''; }
   if (isNarrow()) closeSidebar();
-  content.scrollTop = 0;
+  scroller.scrollTop = 0;
   renderAll();
 }
 
@@ -1260,7 +1261,7 @@ document.addEventListener('input', e => {
   const t = e.target;
   if (t.id === 'searchInput') {
     ui.search = t.value;
-    content.scrollTop = 0;
+    scroller.scrollTop = 0;
     renderSidebar(); renderContent();
     return;
   }

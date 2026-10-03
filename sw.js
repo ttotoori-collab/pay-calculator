@@ -4,18 +4,27 @@
    - 글꼴 같은 외부 파일: 저장해둔 걸 먼저 (cache-first)
    파일을 바꾸면 VERSION만 올려 주세요.
    ============================================ */
-const VERSION = 'wallet-v4';   // v4: 바닷속 디자인 + 낮/밤 모드
+const VERSION = 'wallet-v5';   // v5: 산호초와 헤엄치는 물고기
 const APP_SHELL = [
   './',
   './index.html',
   './style.css',
   './script.js',
+  './ocean.js',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-512-maskable.png',
   './icons/apple-touch-icon.png',
-  './icons/favicon-32.png'
+  './icons/favicon-32.png',
+  './assets/ocean/reef.webp',
+  './assets/ocean/fish-tang.webp',
+  './assets/ocean/fish-goldfish.webp',
+  './assets/ocean/fish-betta.webp',
+  './assets/ocean/fish-yellowtang.webp',
+  './assets/ocean/fish-idol.webp',
+  './assets/ocean/fish-orange.webp',
+  './assets/ocean/fish-butterfly.webp'
 ];
 const FONT_URL = 'https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css';
 

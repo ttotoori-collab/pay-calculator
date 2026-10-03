@@ -14,8 +14,10 @@
 | `index.html` | 창 구조(사이드바·툴바·본문·시트), PWA 메타태그 |
 | `style.css` | Finder 창 디자인, 모바일·안전영역(safe-area) 처리 |
 | `script.js` | 데이터·계산·화면 그리기·이벤트 전부 |
+| `ocean.js` | 바닷속 수족관: 물고기가 헤엄치는 움직임 |
 | `sw.js` | service worker (앱 파일 network-first, 글꼴 CDN cache-first) |
 | `manifest.json` | 앱 이름 "What's in my wallet" / 짧은 이름 "Wallet", standalone, 테마·배경 #333333 |
+| `assets/ocean/` | `source.gif`(원본 그림), `reef.webp`(산호초·돌·모래), `fish-*.webp`(물고기 7종, 투명 배경, 2배 크기) |
 | `icons/` | 강아지 아이콘. `source.png`(원본), `icon-192/512`, `icon-512-maskable`, `apple-touch-icon`(180), `favicon-32` |
 
 ## 데이터 (localStorage)
@@ -74,6 +76,13 @@
 - 월별 정산 PNG도 지금 모드 색으로 그림 (`PAINT` 색판)
 - **낮 — 유리창 너머 바다**: 배경 `#7fd8ec→#2b96c4→#0e5a8a→#083b5e`, 비스듬한 햇살(105deg 흰 줄무늬)이 일렁이고 거품이 올라옴. 창은 젖빛 유리 `rgba(255,255,255,.42)` + `backdrop-filter: blur(18px) saturate(1.5)`. 포인트색 `#1b8fb0`, 제목·총 알바비 `#0d4f7c`
 - **밤 — 심해 야광**: 배경은 위 가운데서 퍼지는 `#17366b→#0b1b3a→#050b1a` + 플랑크톤 점(`#7cf7ff` `#ff5fd2` `#b3ff6b`). 창 `#0c1f40`, 사이드바·상태바 `#081732`. 사이드바 아이콘·주휴 배지·근무 점이 빛나고, 오늘은 `#ff5fd2` 번짐, 총 알바비 `#7cf7ff`가 아주 천천히 밝아졌다 어두워짐
+- **바닷속 수족관** (`ocean.js`, `.sea`): 본문(`.pane`) 뒤에 산호초(`reef.webp`)가 깔리고 물고기가 헤엄침
+  - 구조: `.pane` 안에 `#sea`(수족관) → `#contentScroll`(스크롤 영역, 스와이프·스크롤은 여기서) → `#content`(젖빛 카드 `.card`, 화면은 여기에 그림)
+  - 글자는 카드(`--card`) 위에 있어서 물고기가 지나가도 잘 읽힘. 카드 아래 빈 곳에서 수족관이 또렷이 보임
+  - 물고기: 컴퓨터 9마리, 휴대폰(≤760px) 5마리. 가까움·중간·멂 3단계(멀수록 작고 느리고 흐릿, 산호초 뒤로). 화면을 가로질러 가고, 나가면 방향을 바꿔 다시 들어옴. 위아래로 살짝 흔들림(`.bob`)
+  - 움직임은 transform만(Web Animations API). 탭이 안 보이면 멈춤, `prefers-reduced-motion`이면 멈춘 그림
+  - 밤: 산호초·물고기를 어둡고 푸르게, 윤곽에 야광 빛(`--reef-filter`, `--fish-filter`). 낮: 원래 색
+  - 그림은 사용자가 만든 것 — 모양·색을 바꾸지 않기
 - **알바 태그 색(Red~Gray)은 사용자 데이터라 두 모드 모두 그대로**. 밤에는 색을 바꾸지 않고 흰 테두리 빛(box-shadow)만 둘러요
 - 움직이는 효과는 `prefers-reduced-motion`이면 전부 꺼짐
 - `backdrop-filter`를 못 쓰는 브라우저는 `@supports not`으로 불투명한 색으로 대체
@@ -81,7 +90,7 @@
 - 글자 대비는 두 모드 모두 **4.5:1 이상**으로 맞춰 둠. 가장 흐린 `--gray2`는 주말 날짜·힌트처럼 정말 보조적인 곳에만 쓰기
 
 ## 고칠 때 꼭 지킬 것
-- 앱 파일(아이콘 포함)을 바꾸면 **`sw.js`의 `VERSION`을 올리기** (지금 `wallet-v4`). 새 파일이 생기면 `APP_SHELL`에도 추가
+- 앱 파일(아이콘 포함)을 바꾸면 **`sw.js`의 `VERSION`을 올리기** (지금 `wallet-v5`). 새 파일이 생기면 `APP_SHELL`에도 추가
 - 사용자 입력은 화면에 넣기 전에 `esc()`로 처리
 - 고친 뒤 확인: 계산 결과(위 예시), PC 화면, 휴대폰 폭(390px) 가로 스크롤 없음, 콘솔 오류 없음
 - service worker는 `file://`에서 동작하지 않으니 오프라인 확인은 `python3 -m http.server`로

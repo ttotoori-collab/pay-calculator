@@ -92,7 +92,13 @@
       </header>
 
       <div class="pane">
-        <div class="content" id="content"></div>
+        <!-- 바닷속 수족관: 산호초와 헤엄치는 물고기 (ocean.js) -->
+        <div class="sea" id="sea" aria-hidden="true">
+          <div class="sea-water"></div>
+          <img class="reef" src="assets/ocean/reef.webp" alt="" decoding="async" draggable="false">
+        </div>
+        <!-- 스크롤 영역(#contentScroll) 안의 젖빛 카드(#content)에 화면을 그려요 -->
+        <div class="content" id="contentScroll"><div class="card" id="content"></div></div>
         <!-- macOS 시트 -->
         <div class="sheet-wrap" id="sheetWrap" hidden>
           <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" tabindex="-1"></div>
@@ -108,5 +114,6 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="script.js"></script>
+<script src="ocean.js"></script>
 </body>
 </html>
