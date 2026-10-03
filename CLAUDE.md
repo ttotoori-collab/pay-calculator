@@ -40,9 +40,10 @@
 - 금액은 원 단위 반올림, 천 단위 쉼표
 - 확인용 예: 9:00~20:00, 휴게 12~13시·17~18시 → 9시간
 
-## 디자인: macOS Finder 창
-- 바깥 #ececec, 가운데 창(모서리 10px, 큰 그림자). 글꼴 -apple-system, "Apple SD Gothic Neo", Pretendard, 13px
-- 사이드바 #e3e3e3, 폭 190px, 신호등 장식 3개
+## 디자인: macOS Finder 창 + 바닷속 (낮/밤 모드)
+- 창 구조는 macOS Finder 그대로, 색만 "바닷속"으로 입혔어요. 레이아웃·기능은 모드와 상관없이 똑같아요
+- 가운데 창(모서리 10px, 큰 그림자). 글꼴 -apple-system, "Apple SD Gothic Neo", Pretendard, 13px
+- 사이드바 폭 190px, 신호등 장식 3개 (신호등 색은 두 모드 모두 그대로)
   - 신호등 바로 아래에 작은 제목 "💸 HOW MUCH DID I EARN? 💸" (`.sb-title`). 모바일에선 사이드바가 숨겨져 있으니 같이 안 보임
   - Favorites: Calendar / Jobs / Monthly Pay / Weekly Bonus (아이콘 연분홍 #e88aae 선)
   - iCloud: This Month(총 알바비), Total Hours
@@ -63,8 +64,24 @@
 - 모바일(≤760px): 사이드바 숨기고 왼쪽 위 버튼으로 열기, 표는 카드 형태, 입력칸 16px(아이폰 확대 방지)
 - 기본 화면은 2026년 10월 (`START`). 알바가 없으면 알바 등록부터
 
+### 낮/밤 모드
+- **색은 전부 CSS 변수로만** 쓰기 (`style.css` 맨 위 `:root[data-theme=day]` / `[data-theme=night]`). 새 색을 하드코딩하면 한쪽 모드에서 안 보여요
+- `<html data-theme="day|night">`로 칠해지고, 사용자가 고른 값은 **localStorage `wallet-theme`** 에 저장 (`'day'`/`'night'`, 자동이면 키를 지움). 근무 기록 키 `seran-albailgi-v1`과는 **별개**
+- 기본은 **자동**: 기기가 라이트면 낮, 다크면 밤. 자동일 때 기기 설정이 바뀌면 바로 따라감 (`darkMq`)
+- ⋯ 메뉴 맨 아래 "화면 모드: 자동 / 낮 / 밤" (`data-action="theme"`, 고르면 메뉴는 열어둬서 바로 비교 가능)
+- `index.html` `<head>`의 작은 스크립트가 **그리기 전에** 모드를 정함(깜빡임 방지). `<meta name="theme-color">`도 같이 바뀜 — 낮 `#2b96c4`, 밤 `#0b1b3a`
+- `color-scheme`도 모드에 맞춤 → 시간 입력칸·드롭다운·스크롤바 같은 브라우저 기본 UI도 같이 바뀜
+- 월별 정산 PNG도 지금 모드 색으로 그림 (`PAINT` 색판)
+- **낮 — 유리창 너머 바다**: 배경 `#7fd8ec→#2b96c4→#0e5a8a→#083b5e`, 비스듬한 햇살(105deg 흰 줄무늬)이 일렁이고 거품이 올라옴. 창은 젖빛 유리 `rgba(255,255,255,.42)` + `backdrop-filter: blur(18px) saturate(1.5)`. 포인트색 `#1b8fb0`, 제목·총 알바비 `#0d4f7c`
+- **밤 — 심해 야광**: 배경은 위 가운데서 퍼지는 `#17366b→#0b1b3a→#050b1a` + 플랑크톤 점(`#7cf7ff` `#ff5fd2` `#b3ff6b`). 창 `#0c1f40`, 사이드바·상태바 `#081732`. 사이드바 아이콘·주휴 배지·근무 점이 빛나고, 오늘은 `#ff5fd2` 번짐, 총 알바비 `#7cf7ff`가 아주 천천히 밝아졌다 어두워짐
+- **알바 태그 색(Red~Gray)은 사용자 데이터라 두 모드 모두 그대로**. 밤에는 색을 바꾸지 않고 흰 테두리 빛(box-shadow)만 둘러요
+- 움직이는 효과는 `prefers-reduced-motion`이면 전부 꺼짐
+- `backdrop-filter`를 못 쓰는 브라우저는 `@supports not`으로 불투명한 색으로 대체
+- 휴대폰(≤760px)은 창이 화면을 꽉 채우니 창·본문을 더 투명하게 해서 바다가 비쳐 보이게 (변수만 덮어씀)
+- 글자 대비는 두 모드 모두 **4.5:1 이상**으로 맞춰 둠. 가장 흐린 `--gray2`는 주말 날짜·힌트처럼 정말 보조적인 곳에만 쓰기
+
 ## 고칠 때 꼭 지킬 것
-- 앱 파일(아이콘 포함)을 바꾸면 **`sw.js`의 `VERSION`을 올리기** (지금 `wallet-v3`). 새 파일이 생기면 `APP_SHELL`에도 추가
+- 앱 파일(아이콘 포함)을 바꾸면 **`sw.js`의 `VERSION`을 올리기** (지금 `wallet-v4`). 새 파일이 생기면 `APP_SHELL`에도 추가
 - 사용자 입력은 화면에 넣기 전에 `esc()`로 처리
 - 고친 뒤 확인: 계산 결과(위 예시), PC 화면, 휴대폰 폭(390px) 가로 스크롤 없음, 콘솔 오류 없음
 - service worker는 `file://`에서 동작하지 않으니 오프라인 확인은 `python3 -m http.server`로

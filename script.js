@@ -5,6 +5,7 @@
    ============================================ */
 
 const STORE_KEY = 'seran-albailgi-v1';
+const THEME_KEY = 'wallet-theme';          // 화면 모드만 따로 저장 (근무 기록과 별개)
 const START = { y: 2026, m: 9 };          // 기본 화면: 2026년 10월 (월은 0부터)
 const TAGS = [                             // Finder 태그 색, 등록 순서대로 자동 배정
   { name: 'Red', color: '#ec5a57' },
@@ -120,6 +121,44 @@ function save() {
   } catch (e) {
     if (!saveWarned) { toast('브라우저에 저장하지 못했어요. 시크릿 모드인지 확인해 주세요.'); saveWarned = true; }
   }
+}
+
+/* ============================================
+   화면 모드 (자동 / 낮 / 밤)
+   - 'auto'면 기기 설정을 따라가요 (라이트=낮, 다크=밤)
+   - 실제로 칠해지는 값은 <html data-theme="day|night">
+   ============================================ */
+const THEME_COLOR = { day: '#2b96c4', night: '#0b1b3a' };
+const darkMq = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null;
+
+function loadTheme() {
+  try {
+    const v = localStorage.getItem(THEME_KEY);
+    return v === 'day' || v === 'night' ? v : 'auto';
+  } catch (e) { return 'auto'; }
+}
+let themePref = loadTheme();
+const resolvedTheme = () => themePref === 'auto' ? (darkMq && darkMq.matches ? 'night' : 'day') : themePref;
+
+function applyTheme() {
+  const t = resolvedTheme();
+  document.documentElement.setAttribute('data-theme', t);
+  const meta = $('meta[name=theme-color]');
+  if (meta) meta.setAttribute('content', THEME_COLOR[t]);
+  $$('[data-action=theme]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.mode === themePref)));
+}
+function setTheme(mode) {
+  themePref = mode;
+  try {
+    if (mode === 'auto') localStorage.removeItem(THEME_KEY);
+    else localStorage.setItem(THEME_KEY, mode);
+  } catch (e) { /* 시크릿 모드면 이번만 적용돼요 */ }
+  applyTheme();
+}
+// 자동일 때 기기 설정이 바뀌면 같이 바뀌게
+if (darkMq) {
+  const onScheme = () => { if (themePref === 'auto') applyTheme(); };
+  darkMq.addEventListener ? darkMq.addEventListener('change', onScheme) : darkMq.addListener(onScheme);
 }
 
 let state = load();
@@ -850,8 +889,24 @@ function deleteJob() {
 }
 
 /* ============================================
-   정산 이미지 저장
+   정산 이미지 저장 — 지금 화면 모드 색으로 그려요
    ============================================ */
+const PAINT = {
+  day: {
+    sky: [[0, '#7fd8ec'], [.38, '#2b96c4'], [.72, '#0e5a8a'], [1, '#083b5e']],
+    shadow: 'rgba(3,38,66,.32)', win: '#f4fbfe', border: '#cfe8f3',
+    title: '#0d4f7c', sub: '#11557e', head: '#27566e', line: '#cde5ef',
+    stripe: '#e9f6fb', strong: '#0b3a56', text: '#0b3a56', muted: '#4a7e99',
+    total: '#0d4f7c', faint: '#7fa8bd'
+  },
+  night: {
+    sky: [[0, '#17366b'], [.5, '#0b1b3a'], [1, '#050b1a']],
+    shadow: 'rgba(0,0,0,.6)', win: '#0c1f40', border: '#1f3d6e',
+    title: '#e4f0ff', sub: '#cfe3ff', head: '#6f8bb5', line: '#1a3563',
+    stripe: 'rgba(124,247,255,.05)', strong: '#cfe3ff', text: '#cfe3ff', muted: '#5c7aa8',
+    total: '#7cf7ff', faint: '#5c7aa8'
+  }
+};
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
@@ -865,61 +920,65 @@ async function shareImage() {
   const W = 760, rowH = 40, pad0 = 28, winX = 24, winY = 24;
   const H = winY * 2 + 120 + 34 + c.jobs.length * rowH + 76;
   const S = 2;
+  const P = PAINT[resolvedTheme()];
   const cv = document.createElement('canvas');
   cv.width = W * S; cv.height = H * S;
   const ctx = cv.getContext('2d');
   ctx.scale(S, S);
-  ctx.fillStyle = '#ececec'; ctx.fillRect(0, 0, W, H);
+  // 바깥: 바다
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  P.sky.forEach(([at, col]) => sky.addColorStop(at, col));
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
   // 창
   ctx.save();
-  ctx.shadowColor = 'rgba(0,0,0,.18)'; ctx.shadowBlur = 30; ctx.shadowOffsetY = 10;
-  roundRect(ctx, winX, winY, W - winX * 2, H - winY * 2, 12); ctx.fillStyle = '#fff'; ctx.fill();
+  ctx.shadowColor = P.shadow; ctx.shadowBlur = 30; ctx.shadowOffsetY = 10;
+  roundRect(ctx, winX, winY, W - winX * 2, H - winY * 2, 12); ctx.fillStyle = P.win; ctx.fill();
   ctx.restore();
-  ctx.strokeStyle = '#d3d3d3'; ctx.lineWidth = 1; roundRect(ctx, winX + .5, winY + .5, W - winX * 2 - 1, H - winY * 2 - 1, 12); ctx.stroke();
+  ctx.strokeStyle = P.border; ctx.lineWidth = 1; roundRect(ctx, winX + .5, winY + .5, W - winX * 2 - 1, H - winY * 2 - 1, 12); ctx.stroke();
   // 신호등
   [['#ff5f57', 0], ['#febc2e', 1], ['#28c840', 2]].forEach(([col, i]) => {
     ctx.beginPath(); ctx.arc(winX + 22 + i * 20, winY + 24, 6, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill();
   });
   const L = winX + pad0, R = W - winX - pad0;
   // 제목
-  ctx.fillStyle = '#4d4d4d'; ctx.font = `700 19px ${F}`; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = P.title; ctx.font = `700 19px ${F}`; ctx.textBaseline = 'alphabetic';
   const TITLE = '💸 HOW MUCH DID I EARN? 💸';
   ctx.fillText(TITLE, L, winY + 78);
   const tw = ctx.measureText(TITLE).width;
-  ctx.fillStyle = '#a3a3a3'; ctx.font = `500 13px ${F}`;
+  ctx.fillStyle = P.muted; ctx.font = `500 13px ${F}`;
   ctx.fillText(`${ui.y}.${pad(ui.m + 1)}`, L + tw + 10, winY + 78);
   // 표 머리
   const cols = [{ t: '알바', x: L, a: 'left' }, { t: '근무시간', x: R - 330, a: 'right' }, { t: '기본급', x: R - 225, a: 'right' }, { t: '주휴수당', x: R - 115, a: 'right' }, { t: '합계', x: R, a: 'right' }];
   let y = winY + 120;
-  ctx.font = `500 12px ${F}`; ctx.fillStyle = '#7d7d7d';
+  ctx.font = `500 12px ${F}`; ctx.fillStyle = P.head;
   cols.forEach(col => { ctx.textAlign = col.a; ctx.fillText(col.t, col.x, y); });
   y += 10;
-  ctx.fillStyle = '#e6e6e6'; ctx.fillRect(L - 8, y, R - L + 16, 1);
+  ctx.fillStyle = P.line; ctx.fillRect(L - 8, y, R - L + 16, 1);
   // 행
   c.jobs.forEach((r, i) => {
     const top = y + 1 + i * rowH;
-    if (i % 2 === 1) { ctx.fillStyle = '#f5f5f5'; ctx.fillRect(L - 8, top, R - L + 16, rowH); }
+    if (i % 2 === 1) { ctx.fillStyle = P.stripe; ctx.fillRect(L - 8, top, R - L + 16, rowH); }
     const mid = top + rowH / 2 + 5;
     ctx.beginPath(); ctx.arc(L + 5, mid - 5, 5, 0, Math.PI * 2); ctx.fillStyle = r.job.color; ctx.fill();
-    ctx.textAlign = 'left'; ctx.fillStyle = '#1d1d1f'; ctx.font = `500 14px ${F}`;
+    ctx.textAlign = 'left'; ctx.fillStyle = P.strong; ctx.font = `500 14px ${F}`;
     let name = r.job.name;
     while (ctx.measureText(name).width > R - 340 - (L + 18) - 10 && name.length > 1) name = name.slice(0, -1);
     ctx.fillText(name === r.job.name ? name : name + '…', L + 18, mid);
-    ctx.textAlign = 'right'; ctx.fillStyle = '#333'; ctx.font = `400 14px ${F}`;
+    ctx.textAlign = 'right'; ctx.fillStyle = P.text; ctx.font = `400 14px ${F}`;
     ctx.fillText(fmtH(r.minutes), cols[1].x, mid);
     ctx.fillText(won(r.base), cols[2].x, mid);
     if (r.bonus) ctx.fillText(won(r.holiday), cols[3].x, mid);
-    else { ctx.fillStyle = '#a3a3a3'; ctx.font = `400 13px ${F}`; ctx.fillText('시급 포함', cols[3].x, mid); }
-    ctx.font = `700 14px ${F}`; ctx.fillStyle = '#1d1d1f';
+    else { ctx.fillStyle = P.muted; ctx.font = `400 13px ${F}`; ctx.fillText('시급 포함', cols[3].x, mid); }
+    ctx.font = `700 14px ${F}`; ctx.fillStyle = P.strong;
     ctx.fillText(won(r.total), cols[4].x, mid);
   });
   y += 1 + c.jobs.length * rowH + 22;
-  ctx.fillStyle = '#e6e6e6'; ctx.fillRect(L - 8, y - 14, R - L + 16, 1);
-  ctx.textAlign = 'left'; ctx.fillStyle = '#6e6e6e'; ctx.font = `500 14px ${F}`;
+  ctx.fillStyle = P.line; ctx.fillRect(L - 8, y - 14, R - L + 16, 1);
+  ctx.textAlign = 'left'; ctx.fillStyle = P.sub; ctx.font = `500 14px ${F}`;
   ctx.fillText(`${ui.m + 1}월 총 알바비`, L, y + 16);
-  ctx.textAlign = 'right'; ctx.fillStyle = '#1d1d1f'; ctx.font = `700 26px ${F}`;
+  ctx.textAlign = 'right'; ctx.fillStyle = P.total; ctx.font = `700 26px ${F}`;
   ctx.fillText(won(c.total), R, y + 20);
-  ctx.textAlign = 'left'; ctx.fillStyle = '#b0b0b0'; ctx.font = `400 11px ${F}`;
+  ctx.textAlign = 'left'; ctx.fillStyle = P.faint; ctx.font = `400 11px ${F}`;
   ctx.fillText(`근무 ${fmtH(c.minutes)} · 주휴 받은 주 ${c.paidWeeks}주 · ${TODAY.replace(/-/g, '.')} 기준`, L, y + 46);
 
   const blob = await new Promise(res => cv.toBlob(res, 'image/png'));
@@ -1123,6 +1182,10 @@ document.addEventListener('click', e => {
       if (ui.searchOpen) closeSearch();                   // 한 번 더 누르면 닫고 검색어 초기화
       else { closePanels(); openSearch(); }
       break;
+    case 'theme':
+      setTheme(t.dataset.mode);   // 메뉴는 열어둬서 낮·밤을 바로 비교할 수 있게
+      toast(themePref === 'auto' ? '화면 모드: 기기 설정 따라가기' : themePref === 'day' ? '화면 모드: 낮' : '화면 모드: 밤');
+      break;
     case 'export': closeMenu(); exportData(); break;
     case 'import': closeMenu(); $('#importFile').click(); break;
     case 'reset-all':
@@ -1250,6 +1313,7 @@ function toast(msg) {
    시작
    ============================================ */
 $$('[data-icon]').forEach(el => { el.innerHTML = icon(el.dataset.icon); });
+applyTheme();
 if (!state.jobs.length) ui.view = 'jobs';
 renderAll();
 if (!state.jobs.length) setTimeout(() => openJobSheet(), 350);   // 첫 화면: 알바 등록

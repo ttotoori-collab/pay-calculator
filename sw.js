@@ -4,7 +4,7 @@
    - 글꼴 같은 외부 파일: 저장해둔 걸 먼저 (cache-first)
    파일을 바꾸면 VERSION만 올려 주세요.
    ============================================ */
-const VERSION = 'wallet-v3';   // v3: 툴바를 날짜 중심으로 변경
+const VERSION = 'wallet-v4';   // v4: 바닷속 디자인 + 낮/밤 모드
 const APP_SHELL = [
   './',
   './index.html',

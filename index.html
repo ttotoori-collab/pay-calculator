@@ -8,7 +8,21 @@
 
 <!-- PWA: 홈 화면에 추가해서 앱처럼 쓰기 -->
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#333333">
+<meta name="theme-color" content="#2b96c4" id="themeColor">
+<script>
+/* 화면 모드(낮/밤)는 그리기 전에 정해야 깜빡이지 않아요. 고른 값은 'wallet-theme'에 저장돼요.
+   (근무 기록 키 seran-albailgi-v1 과는 별개예요) */
+(function () {
+  var t;
+  try { t = localStorage.getItem('wallet-theme'); } catch (e) { /* 시크릿 모드 */ }
+  if (t !== 'day' && t !== 'night') {
+    t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'night' : 'day';
+  }
+  document.documentElement.setAttribute('data-theme', t);
+  var m = document.querySelector('meta[name=theme-color]');
+  if (m) m.setAttribute('content', t === 'night' ? '#0b1b3a' : '#2b96c4');
+})();
+</script>
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=2">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png?v=2">
 <!-- 아이폰 홈 화면 -->
@@ -63,6 +77,11 @@
               <button type="button" role="menuitem" data-action="import">백업 파일 불러오기…</button>
               <div class="menu-sep"></div>
               <button type="button" role="menuitem" data-action="reset-all" class="danger">모든 기록 지우기…</button>
+              <div class="menu-sep"></div>
+              <div class="menu-label">화면 모드</div>
+              <button type="button" role="menuitemradio" data-action="theme" data-mode="auto" aria-checked="true"><span class="mk">✓</span>자동</button>
+              <button type="button" role="menuitemradio" data-action="theme" data-mode="day" aria-checked="false"><span class="mk">✓</span>낮 · 유리창 너머 바다</button>
+              <button type="button" role="menuitemradio" data-action="theme" data-mode="night" aria-checked="false"><span class="mk">✓</span>밤 · 심해 야광</button>
             </div>
           </div>
           <div class="search" id="search">
