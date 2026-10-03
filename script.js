@@ -1129,3 +1129,10 @@ $$('[data-icon]').forEach(el => { el.innerHTML = icon(el.dataset.icon); });
 if (!state.jobs.length) ui.view = 'jobs';
 renderAll();
 if (!state.jobs.length) setTimeout(() => openJobSheet(), 350);   // 첫 화면: 알바 등록
+
+/* PWA: 인터넷 없이도 열리게 service worker 등록 (http(s)에서만 동작) */
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => { /* 실패해도 앱은 그대로 동작 */ });
+  });
+}

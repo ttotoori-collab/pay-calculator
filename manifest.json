@@ -1,0 +1,16 @@
+{
+  "name": "What's in my wallet",
+  "short_name": "Wallet",
+  "description": "알바별 시급·근무시간·주휴수당을 계산하는 알바비 계산기",
+  "lang": "ko",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "theme_color": "#e3e3e3",
+  "background_color": "#e3e3e3",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

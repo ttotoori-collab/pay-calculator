@@ -338,3 +338,51 @@ input:focus,select:focus{outline:3px solid rgba(10,108,240,.25);border-color:#8a
   .ftable.sum td:first-child{grid-column:1 / -1;font-weight:600;margin-bottom:2px}
   .ftable.sum td:first-child::before{content:none}
 }
+
+/* ============================================
+   PWA · 앱처럼 보이기 (안전영역 / 설치 모드)
+   ============================================ */
+html,body{overscroll-behavior:none}
+body{-webkit-tap-highlight-color:transparent}
+button,.sb-item,.cell.day,.pk-day{touch-action:manipulation}
+.toolbar,.sidebar,.statusbar,.ftable th{-webkit-user-select:none;user-select:none}
+
+@media (max-width:760px){
+  /* 화면 전체를 앱 화면처럼: 노치·홈 바 피해서 여백 */
+  html,body{height:100%;overflow:hidden}
+  .desk{height:100%}
+  .window{height:100%}
+  .toolbar{
+    padding-left:max(10px,env(safe-area-inset-left));
+    padding-right:max(10px,env(safe-area-inset-right));
+  }
+  .content{
+    padding-left:max(10px,env(safe-area-inset-left));
+    padding-right:max(10px,env(safe-area-inset-right));
+    -webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+  }
+  .statusbar{
+    height:auto;min-height:24px;
+    padding:4px max(10px,env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left));
+  }
+  .sidebar{
+    padding-left:max(10px,env(safe-area-inset-left));
+    padding-bottom:calc(16px + env(safe-area-inset-bottom));
+    width:calc(250px + env(safe-area-inset-left));
+  }
+  .sheet{padding-bottom:env(safe-area-inset-bottom)}
+  .toast{bottom:calc(40px + env(safe-area-inset-bottom))}
+}
+
+/* 홈 화면 앱으로 열었을 때 (컴퓨터에 설치한 경우 포함) */
+@media (display-mode:standalone){
+  .desk{padding:0;display:block;height:100vh;height:100dvh}
+  .window{width:100%;height:100%;min-height:0;border:0;border-radius:0;box-shadow:none}
+}
+@media (display-mode:standalone) and (min-width:761px){
+  .traffic{visibility:hidden}   /* 컴퓨터에 설치하면 진짜 창 버튼이 따로 있어서 장식은 숨김 */
+}
+@media (display-mode:standalone) and (max-width:760px){
+  .toolbar{padding-top:max(10px,env(safe-area-inset-top))}
+  .sidebar{padding-top:max(18px,env(safe-area-inset-top))}
+}
