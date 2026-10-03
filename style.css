@@ -67,7 +67,7 @@
   --sheet-scrim:rgba(3,38,66,.07);
 
   /* 바닷속 수족관 */
-  --card:rgba(255,255,255,.86);
+  --card:rgba(255,255,255,.7);
   --card-line:rgba(255,255,255,.8);
   --sea-tint:linear-gradient(rgba(43,150,196,0) 0%,rgba(43,150,196,.2) 45%,rgba(14,90,138,.34) 100%);
   --reef-filter:saturate(1.05);
@@ -129,7 +129,7 @@
   --sheet-scrim:rgba(2,7,20,.3);
 
   /* 바닷속 수족관: 어둡고 푸르게, 윤곽은 은은한 야광 */
-  --card:rgba(12,31,64,.9);
+  --card:rgba(12,31,64,.75);
   --card-line:rgba(124,247,255,.12);
   --sea-tint:linear-gradient(rgba(5,11,26,0) 0%,rgba(5,11,26,.38) 100%);
   --reef-filter:brightness(.46) saturate(.9) hue-rotate(-8deg) drop-shadow(0 0 7px rgba(124,247,255,.3));

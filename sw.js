@@ -4,7 +4,7 @@
    - 글꼴 같은 외부 파일: 저장해둔 걸 먼저 (cache-first)
    파일을 바꾸면 VERSION만 올려 주세요.
    ============================================ */
-const VERSION = 'wallet-v9';   // v9: 알바별 세금·4대보험 공제
+const VERSION = 'wallet-v10';  // v10: 달력 카드를 더 투명하게
 const APP_SHELL = [
   './',
   './index.html',
