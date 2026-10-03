@@ -2,79 +2,67 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>세란의 알바일기</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>What's in my wallet</title>
 <meta name="description" content="알바별 시급·근무시간·주휴수당을 계산하는 알바비 계산기">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="page">
+<div class="desk">
+  <div class="window" id="window">
 
-  <!-- 맨 위 작은 링크 줄 -->
-  <nav class="toplinks" aria-label="블로그 메뉴">
-    <button type="button" data-action="home">홈</button><span>|</span><button type="button" data-action="settings">설정</button><span>|</span><button type="button" data-action="backup">백업</button>
-  </nav>
+    <!-- 사이드바 -->
+    <aside class="sidebar" id="sidebar" aria-label="사이드바">
+      <div class="traffic" aria-hidden="true"><span class="tl red"></span><span class="tl yellow"></span><span class="tl green"></span></div>
+      <nav id="sbNav"></nav>
+    </aside>
+    <div class="scrim" id="scrim" data-action="close-sidebar" hidden></div>
 
-  <div class="frame">
-    <!-- 헤더 배너 -->
-    <header class="banner">
-      <span class="bubble b1"></span><span class="bubble b2"></span><span class="bubble b3"></span>
-      <span class="bubble b4"></span><span class="bubble b5"></span><span class="bubble b6"></span>
-      <span class="bubble b7"></span><span class="bubble b8"></span>
-      <span class="spark s1">✦</span><span class="spark s2">♡</span><span class="spark s3">✧</span>
-      <div class="banner-text">
-        <h1>세란의 알바일기</h1>
-        <p class="sub">アルバイト日記 ~ my little part-time diary ~</p>
+    <!-- 본문 -->
+    <section class="main">
+      <header class="toolbar" id="toolbar">
+        <div class="tb-left">
+          <button type="button" class="tb-btn sb-toggle" data-action="open-sidebar" aria-label="사이드바 열기"><span data-icon="sidebar"></span></button>
+          <button type="button" class="tb-btn nav" data-action="prev-month" aria-label="이전 달"><span data-icon="chev-left"></span></button>
+          <button type="button" class="tb-btn nav" data-action="next-month" aria-label="다음 달"><span data-icon="chev-right"></span></button>
+          <div class="tb-title"><h1>WHAT'S IN MY WALLET</h1><span id="tbMonth"></span></div>
+        </div>
+        <div class="tb-tools">
+          <button type="button" class="tb-btn combo" id="modeBtn" data-action="toggle-mode" title="보기 전환 (달력 / 리스트)" aria-label="보기 전환"></button>
+          <button type="button" class="tb-btn combo" id="groupBtn" data-action="toggle-group" title="알바별 묶어보기" aria-label="알바별 묶어보기" aria-pressed="false"><span data-icon="group"></span><span data-icon="chev-down" class="mini"></span></button>
+          <button type="button" class="tb-btn" data-action="share" title="월별 정산 이미지로 저장" aria-label="월별 정산 이미지로 저장"><span data-icon="share"></span></button>
+          <button type="button" class="tb-btn" data-action="add-job" title="알바 등록" aria-label="알바 등록"><span data-icon="tag"></span></button>
+          <div class="menu-anchor">
+            <button type="button" class="tb-btn combo" id="menuBtn" data-action="menu" title="설정" aria-label="설정" aria-haspopup="menu" aria-expanded="false"><span data-icon="more"></span><span data-icon="chev-down" class="mini"></span></button>
+            <div class="menu" id="menu" role="menu" hidden>
+              <button type="button" role="menuitem" data-action="export">백업 파일 받기</button>
+              <button type="button" role="menuitem" data-action="import">백업 파일 불러오기…</button>
+              <div class="menu-sep"></div>
+              <button type="button" role="menuitem" data-action="reset-all" class="danger">모든 기록 지우기…</button>
+            </div>
+          </div>
+          <div class="search" id="search">
+            <input type="search" id="searchInput" placeholder="근무 검색" aria-label="근무 검색" autocomplete="off">
+            <button type="button" class="tb-btn" data-action="search" title="근무 검색" aria-label="근무 검색"><span data-icon="search"></span></button>
+          </div>
+        </div>
+      </header>
+
+      <div class="pane">
+        <div class="content" id="content"></div>
+        <!-- macOS 시트 -->
+        <div class="sheet-wrap" id="sheetWrap" hidden>
+          <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" tabindex="-1"></div>
+        </div>
       </div>
-      <div class="banner-since">since 2026.10 ✿</div>
-    </header>
 
-    <!-- 탭 메뉴 -->
-    <nav class="tabs" aria-label="탭">
-      <div class="tabs-side">
-        <button type="button" data-tab="calendar">calendar</button><span class="sep">|</span><button type="button" data-tab="pay">pay</button>
-      </div>
-      <div class="tabs-side">
-        <button type="button" data-tab="job">job</button><span class="sep">|</span><button type="button" data-tab="memo">memo</button>
-      </div>
-    </nav>
-
-    <div class="layout">
-      <!-- 왼쪽 사이드바 -->
-      <aside class="side side-left">
-        <section class="box" id="profileBox"></section>
-        <section class="box" id="categoryBox"></section>
-      </aside>
-
-      <!-- 가운데 본문 -->
-      <main class="content" id="content"></main>
-
-      <!-- 오른쪽 사이드바 -->
-      <aside class="side side-right">
-        <section class="box" id="activityBox"></section>
-        <section class="box" id="miniBox"></section>
-        <div class="rss"><span class="rss-ico">RSS</span> RSS 2.0 | ATOM 0.3</div>
-      </aside>
-    </div>
-
-    <footer class="foot">Copyright © 2026 세란의 알바일기. All rights reserved. · skin by ♡</footer>
+      <footer class="statusbar" id="statusbar"></footer>
+    </section>
   </div>
 </div>
 
-<!-- 블로그 팝업창 -->
-<div class="modal-wrap" id="modal" hidden>
-  <div class="popup" role="dialog" aria-modal="true" aria-labelledby="popTitle" tabindex="-1">
-    <div class="popup-title">
-      <span id="popTitle"></span>
-      <button type="button" class="popup-x" data-action="close-modal" aria-label="닫기">×</button>
-    </div>
-    <div class="popup-body" id="popBody"></div>
-  </div>
-</div>
-
+<input type="file" id="importFile" accept=".json,application/json" hidden>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="script.js"></script>
