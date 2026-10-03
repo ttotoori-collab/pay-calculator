@@ -4,7 +4,7 @@
    - 글꼴 같은 외부 파일: 저장해둔 걸 먼저 (cache-first)
    파일을 바꾸면 VERSION만 올려 주세요.
    ============================================ */
-const VERSION = 'wallet-v8';   // v8: 기록 보호 (사본·덮어쓰기 금지·복구 화면)
+const VERSION = 'wallet-v9';   // v9: 알바별 세금·4대보험 공제
 const APP_SHELL = [
   './',
   './index.html',

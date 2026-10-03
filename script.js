@@ -71,6 +71,15 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const TIME_RE = /^\d{2}:\d{2}$/;
 const safeColor = c => (/^#[0-9a-f]{6}$/i.test(c) ? c : TAGS[0].color);
+/* 공제율: 0~100, 소수점 둘째 자리까지. 값이 없거나 이상하면 기본값 */
+const safeRate = (v, def) => {
+  if (v === undefined || v === null || v === '') return def;
+  const n = Number(v);
+  if (!isFinite(n)) return def;
+  return Math.min(100, Math.max(0, Math.round(n * 100) / 100));
+};
+const rateText = r => String(Math.round(r * 100) / 100);     // 3.30 → "3.3"
+const minus = n => n ? '−' + won(n) : won(0);
 const TODAY = keyOf(new Date());
 const THIS_M = (() => { const n = new Date(); return { y: n.getFullYear(), m: n.getMonth() }; })();
 
@@ -88,7 +97,12 @@ function normalize(d) {
       name: String(j.name).slice(0, 20),
       wage: Math.max(0, Math.round(Number(j.wage) || 0)),
       color: safeColor(j.color),
-      weeklyBonus: j.weeklyBonus === true   // 주휴수당 별도 지급 (없으면 해제 = 시급에 포함)
+      weeklyBonus: j.weeklyBonus === true,  // 주휴수당 별도 지급 (없으면 해제 = 시급에 포함)
+      // 공제 — 예전 데이터에는 없으니 "안 함"으로 채워요 (기록이 깨지지 않게)
+      tax: j.tax === true,
+      taxRate: safeRate(j.taxRate, 3.3),
+      insurance: j.insurance === true,
+      insuranceRate: safeRate(j.insuranceRate, 10)
     })) : [];
   const ids = new Set(jobs.map(j => j.id));
   const shifts = Array.isArray(d.shifts) ? d.shifts
@@ -307,7 +321,7 @@ function monthCalc(y, m) {
   const weeks = weeksOfMonth(y, m);
   const mins = new Map(state.shifts.map(s => [s.id, netMinutes(s)]));
   const paidWeeks = new Set();
-  let total = 0, totalMin = 0;
+  let total = 0, totalMin = 0, totalTax = 0, totalIns = 0, totalNet = 0;
 
   const jobs = state.jobs.map(job => {
     const mine = state.shifts.filter(s => s.jobId === job.id);
@@ -322,16 +336,23 @@ function monthCalc(y, m) {
       return { ...w, minutes: wmin, ...h };
     });
     const holiday = wk.reduce((a, w) => a + w.pay, 0);
-    total += base + holiday;
+    // 합계(기본급+주휴수당)에서 공제를 빼면 실수령액. 각각 원 단위 반올림
+    const gross = base + holiday;
+    const tax = job.tax ? Math.round(gross * job.taxRate / 100) : 0;
+    const ins = job.insurance ? Math.round(gross * job.insuranceRate / 100) : 0;
+    const net = gross - tax - ins;
+    total += gross; totalTax += tax; totalIns += ins; totalNet += net;
     totalMin += minutes;
     return {
-      job, bonus: job.weeklyBonus, minutes, base, holiday, total: base + holiday, weeks: wk,
+      job, bonus: job.weeklyBonus, minutes, base, holiday, total: gross, weeks: wk,
+      tax, ins, net, deducted: tax > 0 || ins > 0 || job.tax || job.insurance,
       holidayWeeks: wk.filter(w => w.ok).length,
       days: new Set(inMonth.map(s => s.date)).size,
       count: inMonth.length
     };
   });
-  return { jobs, total, minutes: totalMin, paidWeeks: paidWeeks.size };
+  return { jobs, total, minutes: totalMin, paidWeeks: paidWeeks.size,
+    tax: totalTax, ins: totalIns, net: totalNet, deducted: totalTax > 0 || totalIns > 0 };
 }
 
 /* 달 마지막 주가 다음 달로 넘어가면 안내 */
@@ -361,6 +382,26 @@ function renderAll() {
   renderContent();
 }
 
+/* 체크한 공제를 작은 배지로.
+   사이드바(190px)는 좁아서 둘 다 체크했으면 "공제" 하나로 묶어요 (compact) */
+const jobBadges = (j, compact) => {
+  const b = [];
+  if (j.weeklyBonus) b.push('주휴');
+  if (compact && j.tax && j.insurance) b.push('공제');
+  else {
+    if (j.tax) b.push(`${rateText(j.taxRate)}%`);
+    if (j.insurance) b.push('4대보험');
+  }
+  return b.map(t => `<span class="jbadge">${esc(t)}</span>`).join('');
+};
+/* 마우스를 올리면 뭘 떼는지 알 수 있게 */
+const dedText = j => {
+  const d = [];
+  if (j.tax) d.push(`세금 ${rateText(j.taxRate)}%`);
+  if (j.insurance) d.push(`4대보험 ${rateText(j.insuranceRate)}%`);
+  return d.length ? ` · 공제 ${d.join(' + ')}` : '';
+};
+
 /* 사이드바 숫자: 100만 원부터는 '만' 단위로 짧게 */
 const walletShort = n => n >= 1e6 ? `₩${Math.round(n / 1e4).toLocaleString('ko-KR')}만` : `₩${Math.round(n).toLocaleString('ko-KR')}`;
 
@@ -376,8 +417,8 @@ function renderSidebar() {
     ['bonus', 'gift', 'Weekly Bonus', '주휴 내역']
   ];
   const tags = state.jobs.map(j => `
-    <button type="button" class="sb-item ${ui.filter === j.id ? 'on' : ''}" data-action="filter" data-id="${esc(j.id)}" title="${esc(j.name)}만 보기">
-      <i class="tagdot" style="background:${j.color}"></i><span class="ell">${esc(j.name)}</span>${j.weeklyBonus ? '<span class="jbadge">주휴</span>' : ''}
+    <button type="button" class="sb-item ${ui.filter === j.id ? 'on' : ''}" data-action="filter" data-id="${esc(j.id)}" title="${esc(j.name)}만 보기${esc(dedText(j))}">
+      <i class="tagdot" style="background:${j.color}"></i><span class="ell">${esc(j.name)}</span>${jobBadges(j, true)}
     </button>`).join('');
   $('#sbNav').innerHTML = `
     <div class="sb-sec">Favorites</div>
@@ -386,8 +427,8 @@ function renderSidebar() {
         ${icon(ic)}<span>${label}</span>
       </button>`).join('')}
     <div class="sb-sec">iCloud</div>
-    <button type="button" class="sb-item" data-action="view" data-view="pay" title="${ui.m + 1}월 총 알바비">
-      ${icon('cloud')}<span>This Month</span><span class="sb-num">${walletShort(c.total)}</span>
+    <button type="button" class="sb-item" data-action="view" data-view="pay" title="${ui.m + 1}월 실수령액${c.deducted ? ` (공제 전 ${won(c.total)})` : ''}">
+      ${icon('cloud')}<span>This Month</span><span class="sb-num">${walletShort(c.net)}</span>
     </button>
     <button type="button" class="sb-item" data-action="view" data-view="bonus" title="${ui.m + 1}월 근무시간">
       ${icon('clock')}<span>Total Hours</span><span class="sb-num">${shortH(c.minutes)}</span>
@@ -507,7 +548,7 @@ function renderCalendar() {
   const y = ui.y, m = ui.m;
   const calc = monthCalc(y, m);
   const list = monthShifts(y, m, ui.filter);
-  setStatus(`${list.length}개 근무 · ${m + 1}월 총 ${won(calc.total)}`);
+  setStatus(`${list.length}개 근무 · ${m + 1}월 총 ${won(calc.total)}${calc.deducted ? ` · 실수령 ${won(calc.net)}` : ''}`);
   if (!state.jobs.length) { content.innerHTML = emptyJobs(); return; }
 
   if (ui.mode === 'list') {
@@ -580,31 +621,42 @@ function listTable(list, opts = {}) {
 }
 
 function summaryTable(c) {
-  const rows = c.jobs.map(r => `<tr role="button" tabindex="0" data-action="edit-job" data-id="${esc(r.job.id)}" title="${esc(r.job.name)} 수정">
+  const dedRow = (label, value, cls = '') =>
+    `<tr class="ded ${cls}"><td colspan="4">${label}</td><td class="r">${value}</td></tr>`;
+  const rows = c.jobs.map(r => {
+    // 공제를 체크한 알바만 아래에 줄을 더해요
+    const extra = r.job.tax || r.job.insurance ? [
+      r.job.tax ? dedRow(`세금 (${rateText(r.job.taxRate)}%)`, minus(r.tax)) : '',
+      r.job.insurance ? dedRow(`4대보험 (${rateText(r.job.insuranceRate)}%)`, minus(r.ins)) : '',
+      dedRow('실수령액', won(r.net), 'net')
+    ].join('') : '';
+    return `<tr role="button" tabindex="0" data-action="edit-job" data-id="${esc(r.job.id)}" title="${esc(r.job.name)} 수정">
       <td data-label="알바"><span class="nm"><span class="dot" style="background:${r.job.color}"></span><span>${esc(r.job.name)}</span></span> <span class="sub">${won(r.job.wage)}/시</span></td>
       <td data-label="근무시간" class="r">${fmtH(r.minutes)}</td>
       <td data-label="기본급" class="r">${won(r.base)}</td>
       <td data-label="주휴수당" class="r">${r.bonus
         ? `<span>${won(r.holiday)}${r.holidayWeeks ? ` <span class="sub">(${r.holidayWeeks}주)</span>` : ''}</span>`
         : '<span class="incl">시급 포함</span>'}</td>
-      <td data-label="합계" class="r strong">${won(r.total)}</td></tr>`).join('');
+      <td data-label="합계" class="r strong">${won(r.total)}</td></tr>${extra}`;
+  }).join('');
   return `<table class="ftable sum">
       <thead><tr><th>알바</th><th class="r">근무시간</th><th class="r">기본급</th><th class="r">주휴수당</th><th class="r">합계</th></tr></thead>
       <tbody>${rows}</tbody></table>
-    <div class="grand"><span>${ui.m + 1}월 총 알바비</span><b>${won(c.total)}</b></div>`;
+    <div class="grand"><span>${ui.m + 1}월 총 알바비</span><b>${won(c.total)}</b></div>
+    ${c.deducted ? `<div class="grand net"><span>실수령액 <small>공제 ${won(c.tax + c.ins)}</small></span><b>${won(c.net)}</b></div>` : ''}`;
 }
 
 /* Monthly Pay */
 function renderPay() {
   const c = monthCalc(ui.y, ui.m);
-  setStatus(`${ui.y}년 ${ui.m + 1}월 정산 · 총 ${won(c.total)}`);
+  setStatus(`${ui.y}년 ${ui.m + 1}월 정산 · 총 ${won(c.total)}${c.deducted ? ` · 실수령 ${won(c.net)}` : ''}`);
   if (!state.jobs.length) { content.innerHTML = emptyJobs(); return; }
   const spill = spillWeek(ui.y, ui.m);
   content.innerHTML = `
     <div class="sec-title">Monthly Pay <small>${ui.y}년 ${ui.m + 1}월</small>
       <button type="button" class="mbtn small push" data-action="share">이미지로 저장</button></div>
     ${summaryTable(c)}
-    <p class="note">기본급은 실제로 일한 날짜의 달에, 주휴수당은 그 주 일요일이 있는 달에 들어가요.${spill ? ` ${md(spill.mon)}~${md(spill.sun)} 주의 주휴수당은 ${spill.sun.getMonth() + 1}월 정산에 들어가요.` : ''}</p>`;
+    <p class="note">기본급은 실제로 일한 날짜의 달에, 주휴수당은 그 주 일요일이 있는 달에 들어가요.${spill ? ` ${md(spill.mon)}~${md(spill.sun)} 주의 주휴수당은 ${spill.sun.getMonth() + 1}월 정산에 들어가요.` : ''}${c.deducted ? ' 공제는 합계(기본급 + 주휴수당)에 비율을 곱해서 원 단위로 반올림해요.' : ''}</p>`;
 }
 
 /* Weekly Bonus */
@@ -648,7 +700,7 @@ function renderJobs() {
   if (!state.jobs.length) { content.innerHTML = emptyJobs(); return; }
   const c = monthCalc(ui.y, ui.m);
   const rows = c.jobs.map(r => `<tr role="button" tabindex="0" data-action="edit-job" data-id="${esc(r.job.id)}">
-      <td data-label="이름"><span class="nm"><span class="dot" style="background:${r.job.color}"></span><span>${esc(r.job.name)}</span>${r.bonus ? '<span class="jbadge">주휴</span>' : ''}</span></td>
+      <td data-label="이름"><span class="nm"><span class="dot" style="background:${r.job.color}"></span><span>${esc(r.job.name)}</span>${jobBadges(r.job)}</span></td>
       <td data-label="시급" class="r">${won(r.job.wage)}${r.bonus ? '' : ' <span class="sub">(주휴 포함)</span>'}</td>
       <td data-label="${ui.m + 1}월 근무" class="r">${r.days}일 · ${fmtH(r.minutes)}</td>
       <td data-label="${ui.m + 1}월 금액" class="r strong">${won(r.total)}</td></tr>`).join('');
@@ -975,7 +1027,7 @@ function jobsSheetHTML() {
     return `<div class="day-row">
       <span class="dot" style="background:${j.color}"></span>
       <div class="dr-main">
-        <b>${esc(j.name)}</b>${j.weeklyBonus ? '<span class="jbadge">주휴</span>' : ''}
+        <b>${esc(j.name)}</b>${jobBadges(j)}
         <small>${won(j.wage)}/시 · 근무 기록 ${n}개</small>
       </div>
       <div class="dr-btns">
@@ -1030,6 +1082,22 @@ function openJobSheet(id) {
           <label class="check"><input type="checkbox" id="jBonus" ${j && j.weeklyBonus ? 'checked' : ''}> 주휴수당 별도 지급 (주 15시간 이상 시)</label>
           <span class="check-hint">체크 해제 = 시급에 주휴수당이 포함돼 있어서 따로 계산하지 않아요.</span>
         </div></div>
+      <div class="frow top"><span class="lbl">공제</span>
+        <div class="col">
+          <div class="fctl">
+            <label class="check"><input type="checkbox" id="jTax" ${j && j.tax ? 'checked' : ''}> 세금 공제</label>
+            <input type="number" class="rate" id="jTaxRate" min="0" max="100" step="0.01" inputmode="decimal"
+              aria-label="세금 공제율(%)" value="${j ? rateText(j.taxRate) : '3.3'}" ${j && j.tax ? '' : 'disabled'}>
+            <span class="unit">%</span>
+          </div>
+          <div class="fctl">
+            <label class="check"><input type="checkbox" id="jIns" ${j && j.insurance ? 'checked' : ''}> 4대보험 공제</label>
+            <input type="number" class="rate" id="jInsRate" min="0" max="100" step="0.01" inputmode="decimal"
+              aria-label="4대보험 공제율(%)" value="${j ? rateText(j.insuranceRate) : '10'}" ${j && j.insurance ? '' : 'disabled'}>
+            <span class="unit">%</span>
+          </div>
+          <span class="check-hint">합계(기본급 + 주휴수당)에서 빼요. 둘 다 체크해도 돼요.</span>
+        </div></div>
       <p class="hint">2026년 최저시급은 10,320원이에요.</p>
     </form>
     <div class="sheet-foot">
@@ -1048,12 +1116,17 @@ function submitJob() {
   if (!wage || wage < 1) { toast('시급을 숫자로 적어 주세요.'); $('#jWage').focus(); return; }
   const color = safeColor(jobEdit.color);
   const weeklyBonus = $('#jBonus').checked;
+  const tax = $('#jTax').checked;
+  const insurance = $('#jIns').checked;
+  const taxRate = safeRate($('#jTaxRate').value, 3.3);
+  const insuranceRate = safeRate($('#jInsRate').value, 10);
+  const ded = { tax, taxRate, insurance, insuranceRate };
   const first = state.jobs.length === 0;
   if (jobEdit.id && jobById(jobEdit.id)) {
-    Object.assign(jobById(jobEdit.id), { name, wage, color, weeklyBonus });
+    Object.assign(jobById(jobEdit.id), { name, wage, color, weeklyBonus, ...ded });
     toast(`"${name}" 수정했어요.`);
   } else {
-    state.jobs.push({ id: uid(), name, wage, color, weeklyBonus });
+    state.jobs.push({ id: uid(), name, wage, color, weeklyBonus, ...ded });
     if (first) { ui.view = 'calendar'; toast(`"${name}" 등록! 날짜를 눌러 근무를 기록해 보세요.`); }
     else toast(`"${name}" 등록했어요.`);
   }
@@ -1119,8 +1192,10 @@ async function shareImage() {
   try { if (document.fonts) await document.fonts.ready; } catch (e) { /* 무시 */ }
   const c = monthCalc(ui.y, ui.m);
   const F = '-apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard Variable", Pretendard, "Malgun Gothic", sans-serif';
-  const W = 760, rowH = 40, pad0 = 28, winX = 24, winY = 24;
-  const H = winY * 2 + 120 + 34 + c.jobs.length * rowH + 76;
+  const W = 760, rowH = 40, dedH = 17, pad0 = 28, winX = 24, winY = 24;
+  const dedLines = r => (r.job.tax ? 1 : 0) + (r.job.insurance ? 1 : 0) + (r.job.tax || r.job.insurance ? 1 : 0);
+  const bodyH = c.jobs.reduce((a, r) => a + rowH + dedLines(r) * dedH, 0);
+  const H = winY * 2 + 120 + 34 + bodyH + 76 + (c.deducted ? 26 : 0);
   const S = 2;
   const P = PAINT[resolvedTheme()];
   const cv = document.createElement('canvas');
@@ -1157,9 +1232,10 @@ async function shareImage() {
   y += 10;
   ctx.fillStyle = P.line; ctx.fillRect(L - 8, y, R - L + 16, 1);
   // 행
+  let top = y + 1;
   c.jobs.forEach((r, i) => {
-    const top = y + 1 + i * rowH;
-    if (i % 2 === 1) { ctx.fillStyle = P.stripe; ctx.fillRect(L - 8, top, R - L + 16, rowH); }
+    const hh = rowH + dedLines(r) * dedH;
+    if (i % 2 === 1) { ctx.fillStyle = P.stripe; ctx.fillRect(L - 8, top, R - L + 16, hh); }
     const mid = top + rowH / 2 + 5;
     ctx.beginPath(); ctx.arc(L + 5, mid - 5, 5, 0, Math.PI * 2); ctx.fillStyle = r.job.color; ctx.fill();
     ctx.textAlign = 'left'; ctx.fillStyle = P.strong; ctx.font = `500 14px ${F}`;
@@ -1173,13 +1249,35 @@ async function shareImage() {
     else { ctx.fillStyle = P.muted; ctx.font = `400 13px ${F}`; ctx.fillText('시급 포함', cols[3].x, mid); }
     ctx.font = `700 14px ${F}`; ctx.fillStyle = P.strong;
     ctx.fillText(won(r.total), cols[4].x, mid);
+    // 공제 줄
+    let dy = mid + 15;
+    const dedLine = (label, value, strong) => {
+      ctx.textAlign = 'left'; ctx.font = `400 11.5px ${F}`; ctx.fillStyle = P.muted;
+      ctx.fillText(label, L + 18, dy);
+      ctx.textAlign = 'right';
+      ctx.font = `${strong ? 600 : 400} 11.5px ${F}`; ctx.fillStyle = strong ? P.total : P.muted;
+      ctx.fillText(value, cols[4].x, dy);
+      dy += dedH;
+    };
+    if (r.job.tax) dedLine(`세금 (${rateText(r.job.taxRate)}%)`, minus(r.tax));
+    if (r.job.insurance) dedLine(`4대보험 (${rateText(r.job.insuranceRate)}%)`, minus(r.ins));
+    if (r.job.tax || r.job.insurance) dedLine('실수령액', won(r.net), true);
+    top += hh;
   });
-  y += 1 + c.jobs.length * rowH + 22;
+  y = top + 22;
   ctx.fillStyle = P.line; ctx.fillRect(L - 8, y - 14, R - L + 16, 1);
+  if (c.deducted) {
+    // 공제가 있으면: 총 알바비는 작게, 실수령액을 크게
+    ctx.textAlign = 'left'; ctx.fillStyle = P.muted; ctx.font = `400 12.5px ${F}`;
+    ctx.fillText(`${ui.m + 1}월 총 알바비`, L, y + 6);
+    ctx.textAlign = 'right'; ctx.fillStyle = P.text; ctx.font = `500 13px ${F}`;
+    ctx.fillText(`${won(c.total)}  −${won(c.tax + c.ins).replace('원', '')}원 공제`, R, y + 6);
+    y += 22;
+  }
   ctx.textAlign = 'left'; ctx.fillStyle = P.sub; ctx.font = `500 14px ${F}`;
-  ctx.fillText(`${ui.m + 1}월 총 알바비`, L, y + 16);
+  ctx.fillText(`${ui.m + 1}월 ${c.deducted ? '실수령액' : '총 알바비'}`, L, y + 16);
   ctx.textAlign = 'right'; ctx.fillStyle = P.total; ctx.font = `700 26px ${F}`;
-  ctx.fillText(won(c.total), R, y + 20);
+  ctx.fillText(won(c.deducted ? c.net : c.total), R, y + 20);
   ctx.textAlign = 'left'; ctx.fillStyle = P.faint; ctx.font = `400 11px ${F}`;
   ctx.fillText(`근무 ${fmtH(c.minutes)} · 주휴 받은 주 ${c.paidWeeks}주 · ${TODAY.replace(/-/g, '.')} 기준`, L, y + 46);
 
@@ -1559,6 +1657,13 @@ document.addEventListener('input', e => {
 
 document.addEventListener('change', e => {
   if (e.target.id === 'importFile' && e.target.files[0]) { importData(e.target.files[0]); e.target.value = ''; }
+  // 공제를 체크했을 때만 비율을 입력할 수 있게
+  const pair = { jTax: 'jTaxRate', jIns: 'jInsRate' }[e.target.id];
+  if (pair) {
+    const box = $('#' + pair);
+    box.disabled = !e.target.checked;
+    if (e.target.checked) box.focus();
+  }
 });
 
 document.addEventListener('submit', e => {
