@@ -1,6 +1,6 @@
 'use strict';
 /* ============================================
-   What's in my wallet — 알바비 계산기
+   How much did I earn? — 알바비 계산기
    데이터는 localStorage에 저장돼요.
    ============================================ */
 
@@ -83,7 +83,8 @@ function normalize(d) {
       id: String(j.id),
       name: String(j.name).slice(0, 20),
       wage: Math.max(0, Math.round(Number(j.wage) || 0)),
-      color: safeColor(j.color)
+      color: safeColor(j.color),
+      weeklyBonus: j.weeklyBonus === true   // 주휴수당 별도 지급 (없으면 해제 = 시급에 포함)
     })) : [];
   const ids = new Set(jobs.map(j => j.id));
   const shifts = Array.isArray(d.shifts) ? d.shifts
@@ -219,7 +220,7 @@ function monthCalc(y, m) {
     const wk = weeks.map(w => {
       const wmin = mine.filter(s => s.date >= w.monK && s.date <= w.sunK)
         .reduce((a, s) => a + mins.get(s.id), 0);
-      const h = holidayFor(wmin, job.wage);
+      const h = job.weeklyBonus ? holidayFor(wmin, job.wage) : { ok: false, hours: 0, pay: 0 };
       if (h.ok) paidWeeks.add(w.monK);
       return { ...w, minutes: wmin, ...h };
     });
@@ -227,7 +228,7 @@ function monthCalc(y, m) {
     total += base + holiday;
     totalMin += minutes;
     return {
-      job, minutes, base, holiday, total: base + holiday, weeks: wk,
+      job, bonus: job.weeklyBonus, minutes, base, holiday, total: base + holiday, weeks: wk,
       holidayWeeks: wk.filter(w => w.ok).length,
       days: new Set(inMonth.map(s => s.date)).size,
       count: inMonth.length
@@ -278,7 +279,7 @@ function renderSidebar() {
   ];
   const tags = state.jobs.map(j => `
     <button type="button" class="sb-item ${ui.filter === j.id ? 'on' : ''}" data-action="filter" data-id="${esc(j.id)}" title="${esc(j.name)}만 보기">
-      <i class="tagdot" style="background:${j.color}"></i><span class="ell">${esc(j.name)}</span>
+      <i class="tagdot" style="background:${j.color}"></i><span class="ell">${esc(j.name)}</span>${j.weeklyBonus ? '<span class="jbadge">주휴</span>' : ''}
     </button>`).join('');
   $('#sbNav').innerHTML = `
     <div class="sb-sec">Favorites</div>
@@ -406,7 +407,7 @@ function listTable(list, opts = {}) {
       const rs = rows.filter(r => r.j.id === j.id);
       if (!rs.length) return;
       const sum = rs.reduce((a, r) => a + r.pay, 0), min = rs.reduce((a, r) => a + r.min, 0);
-      body += `<tr class="grp"><td colspan="4"><span class="nm"><span class="dot" style="background:${j.color}"></span>${esc(j.name)}<span class="sub">${rs.length}개 · ${fmtH(min)} · ${won(sum)}${opts.search ? '' : ' (주휴 제외)'}</span></span></td></tr>`;
+      body += `<tr class="grp"><td colspan="4"><span class="nm"><span class="dot" style="background:${j.color}"></span>${esc(j.name)}<span class="sub">${rs.length}개 · ${fmtH(min)} · ${won(sum)}${!opts.search && j.weeklyBonus ? ' (주휴 제외)' : ''}</span></span></td></tr>`;
       body += rs.map(row).join('');
     });
   } else {
@@ -422,7 +423,9 @@ function summaryTable(c) {
       <td data-label="알바"><span class="nm"><span class="dot" style="background:${r.job.color}"></span><span>${esc(r.job.name)}</span></span> <span class="sub">${won(r.job.wage)}/시</span></td>
       <td data-label="근무시간" class="r">${fmtH(r.minutes)}</td>
       <td data-label="기본급" class="r">${won(r.base)}</td>
-      <td data-label="주휴수당" class="r"><span>${won(r.holiday)}${r.holidayWeeks ? ` <span class="sub">(${r.holidayWeeks}주)</span>` : ''}</span></td>
+      <td data-label="주휴수당" class="r">${r.bonus
+        ? `<span>${won(r.holiday)}${r.holidayWeeks ? ` <span class="sub">(${r.holidayWeeks}주)</span>` : ''}</span>`
+        : '<span class="incl">시급 포함</span>'}</td>
       <td data-label="합계" class="r strong">${won(r.total)}</td></tr>`).join('');
   return `<table class="ftable sum">
       <thead><tr><th>알바</th><th class="r">근무시간</th><th class="r">기본급</th><th class="r">주휴수당</th><th class="r">합계</th></tr></thead>
@@ -449,7 +452,9 @@ function renderBonus() {
   setStatus(`${ui.m + 1}월 주휴수당 받은 주 ${c.paidWeeks}주`);
   if (!state.jobs.length) { content.innerHTML = emptyJobs(); return; }
   const spill = spillWeek(ui.y, ui.m);
-  const boxes = c.jobs.map(r => `
+  const bonusJobs = c.jobs.filter(r => r.bonus);
+  const others = c.jobs.filter(r => !r.bonus);
+  const boxes = bonusJobs.map(r => `
     <div class="sec-title"><span class="dot" style="background:${r.job.color}"></span>${esc(r.job.name)} <small>시급 ${won(r.job.wage)} · 주휴수당 ${won(r.holiday)}</small></div>
     <table class="ftable sum">
       <thead><tr><th>주 (월~일)</th><th class="r">근무시간</th><th class="r">주휴시간</th><th class="r">주휴수당</th></tr></thead>
@@ -461,10 +466,13 @@ function renderBonus() {
     </table>`).join('');
   content.innerHTML = `
     <div class="sec-title">Weekly Bonus <small>${ui.y}년 ${ui.m + 1}월 주휴수당</small></div>
-    ${boxes}
-    ${spill ? `<p class="note">※ ${md(spill.mon)}~${md(spill.sun)} 주는 일요일이 ${spill.sun.getMonth() + 1}월이라 ${spill.sun.getMonth() + 1}월에서 계산해요.</p>` : ''}
+    ${boxes || `<div class="empty" style="padding:40px 20px"><p>주휴수당을 따로 받는 알바가 없어요.<br><small>알바 수정 창에서 "주휴수당 별도 지급"을 체크하면 여기에 주별로 나와요.</small></p>
+      <button type="button" class="mbtn" data-action="view" data-view="jobs">Jobs 열기</button></div>`}
+    ${others.length && boxes ? `<p class="note">${others.map(r => esc(r.job.name)).join(', ')}은(는) 시급에 주휴수당이 포함돼 있어 빼고 보여줘요.</p>` : ''}
+    ${spill && boxes ? `<p class="note">※ ${md(spill.mon)}~${md(spill.sun)} 주는 일요일이 ${spill.sun.getMonth() + 1}월이라 ${spill.sun.getMonth() + 1}월에서 계산해요.</p>` : ''}
     <div class="sec-title">계산 방법</div>
     <ul class="rules">
+      <li>"주휴수당 별도 지급"을 체크한 알바만 계산해요. 체크 안 한 알바는 근무시간 × 시급만 계산해요.</li>
       <li>한 주는 월요일~일요일, 알바별로 따로 계산해요.</li>
       <li>한 주 순수 근무시간이 15시간 이상이면 주휴수당이 생겨요.</li>
       <li>주휴시간 = (주 근무시간 ÷ 40) × 8, 최대 8시간 · 주휴수당 = 주휴시간 × 시급</li>
@@ -479,8 +487,8 @@ function renderJobs() {
   if (!state.jobs.length) { content.innerHTML = emptyJobs(); return; }
   const c = monthCalc(ui.y, ui.m);
   const rows = c.jobs.map(r => `<tr role="button" tabindex="0" data-action="edit-job" data-id="${esc(r.job.id)}">
-      <td data-label="이름"><span class="nm"><span class="dot" style="background:${r.job.color}"></span><span>${esc(r.job.name)}</span></span></td>
-      <td data-label="시급" class="r">${won(r.job.wage)}</td>
+      <td data-label="이름"><span class="nm"><span class="dot" style="background:${r.job.color}"></span><span>${esc(r.job.name)}</span>${r.bonus ? '<span class="jbadge">주휴</span>' : ''}</span></td>
+      <td data-label="시급" class="r">${won(r.job.wage)}${r.bonus ? '' : ' <span class="sub">(주휴 포함)</span>'}</td>
       <td data-label="${ui.m + 1}월 근무" class="r">${r.days}일 · ${fmtH(r.minutes)}</td>
       <td data-label="${ui.m + 1}월 금액" class="r strong">${won(r.total)}</td></tr>`).join('');
   content.innerHTML = `
@@ -747,6 +755,11 @@ function openJobSheet(id) {
           ${TAGS.map(t => `<button type="button" class="sw ${t.color === jobEdit.color ? 'on' : ''}" style="background:${t.color}" data-action="pick-color" data-color="${t.color}" role="radio" aria-checked="${t.color === jobEdit.color}" title="${t.name}" aria-label="${t.name}"></button>`).join('')}
           ${isTag ? '' : `<button type="button" class="sw on" style="background:${jobEdit.color}" data-action="pick-color" data-color="${jobEdit.color}" title="지금 색" aria-label="지금 색"></button>`}
         </div></div>
+      <div class="frow top"><span class="lbl">주휴</span>
+        <div class="col">
+          <label class="check"><input type="checkbox" id="jBonus" ${j && j.weeklyBonus ? 'checked' : ''}> 주휴수당 별도 지급 (주 15시간 이상 시)</label>
+          <span class="check-hint">체크 해제 = 시급에 주휴수당이 포함돼 있어서 따로 계산하지 않아요.</span>
+        </div></div>
       <p class="hint">2026년 최저시급은 10,320원이에요.</p>
     </form>
     <div class="sheet-foot">
@@ -764,12 +777,13 @@ function submitJob() {
   if (!name) { toast('알바 이름을 적어 주세요.'); $('#jName').focus(); return; }
   if (!wage || wage < 1) { toast('시급을 숫자로 적어 주세요.'); $('#jWage').focus(); return; }
   const color = safeColor(jobEdit.color);
+  const weeklyBonus = $('#jBonus').checked;
   const first = state.jobs.length === 0;
   if (jobEdit.id && jobById(jobEdit.id)) {
-    Object.assign(jobById(jobEdit.id), { name, wage, color });
+    Object.assign(jobById(jobEdit.id), { name, wage, color, weeklyBonus });
     toast(`"${name}" 수정했어요.`);
   } else {
-    state.jobs.push({ id: uid(), name, wage, color });
+    state.jobs.push({ id: uid(), name, wage, color, weeklyBonus });
     if (first) { ui.view = 'calendar'; toast(`"${name}" 등록! 날짜를 눌러 근무를 기록해 보세요.`); }
     else toast(`"${name}" 등록했어요.`);
   }
@@ -821,8 +835,9 @@ async function shareImage() {
   const L = winX + pad0, R = W - winX - pad0;
   // 제목
   ctx.fillStyle = '#4d4d4d'; ctx.font = `700 19px ${F}`; ctx.textBaseline = 'alphabetic';
-  ctx.fillText("WHAT'S IN MY WALLET", L, winY + 78);
-  const tw = ctx.measureText("WHAT'S IN MY WALLET").width;
+  const TITLE = '💸 HOW MUCH DID I EARN? 💸';
+  ctx.fillText(TITLE, L, winY + 78);
+  const tw = ctx.measureText(TITLE).width;
   ctx.fillStyle = '#a3a3a3'; ctx.font = `500 13px ${F}`;
   ctx.fillText(`${ui.y}.${pad(ui.m + 1)}`, L + tw + 10, winY + 78);
   // 표 머리
@@ -845,7 +860,8 @@ async function shareImage() {
     ctx.textAlign = 'right'; ctx.fillStyle = '#333'; ctx.font = `400 14px ${F}`;
     ctx.fillText(fmtH(r.minutes), cols[1].x, mid);
     ctx.fillText(won(r.base), cols[2].x, mid);
-    ctx.fillText(won(r.holiday), cols[3].x, mid);
+    if (r.bonus) ctx.fillText(won(r.holiday), cols[3].x, mid);
+    else { ctx.fillStyle = '#a3a3a3'; ctx.font = `400 13px ${F}`; ctx.fillText('시급 포함', cols[3].x, mid); }
     ctx.font = `700 14px ${F}`; ctx.fillStyle = '#1d1d1f';
     ctx.fillText(won(r.total), cols[4].x, mid);
   });
@@ -860,7 +876,7 @@ async function shareImage() {
 
   const blob = await new Promise(res => cv.toBlob(res, 'image/png'));
   if (!blob) { toast('이미지를 만들지 못했어요.'); return; }
-  const fname = `wallet-${ui.y}-${pad(ui.m + 1)}.png`;
+  const fname = `earned-${ui.y}-${pad(ui.m + 1)}.png`;
   const file = new File([blob], fname, { type: 'image/png' });
   const touch = window.matchMedia('(pointer: coarse)').matches;
   if (touch && navigator.canShare && navigator.canShare({ files: [file] })) {

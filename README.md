@@ -1,4 +1,4 @@
-# What's in my wallet 👛
+# 💸 How much did I earn? 💸
 
 macOS Finder 창 느낌의 알바비 계산기 웹앱이에요.
 
