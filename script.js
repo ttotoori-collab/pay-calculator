@@ -644,32 +644,76 @@ let pop = null;
 function openDay(date, editId) {
   if (!state.jobs.length) { openJobSheet(); toast('먼저 알바를 등록해 주세요.'); return; }
   const dt = parseYmd(date);
-  pop = { date, editId: null, jobId: null, start: '', end: '', breaks: [], copy: new Set(), showCopy: false, py: dt.getFullYear(), pm: dt.getMonth() };
+  pop = { date, editId: null, jobId: null, start: '', end: '', breaks: [], copy: new Set(), showCopy: false, py: dt.getFullYear(), pm: dt.getMonth(), formOpen: false };
+  // 이미 근무가 있는 날은 목록만 보여주고 입력칸은 접어둬요 (지우러 들어왔다가 실수로 또 넣는 일이 없게)
+  pop.formOpen = !!editId || !shiftsOn(date).length;
   resetForm();
   openSheet('day', `
     <div class="sheet-head" id="sheetTitle">${longDate(date)}</div>
     <div class="sheet-body">
       <div class="day-list" id="dayList"></div>
-      <div class="form-head" id="formHead"><span id="formTitle"></span>
-        <button type="button" class="linkbtn" data-action="cancel-edit" id="cancelEdit" hidden>새로 쓰기</button></div>
-      <div class="frow"><label for="fJob">알바</label>
-        <select id="fJob">${state.jobs.map(j => `<option value="${esc(j.id)}">${esc(j.name)} · ${won(j.wage)}</option>`).join('')}</select></div>
-      <div class="frow"><label for="fStart">근무</label>
-        <div class="fctl"><input type="time" id="fStart" aria-label="시작 시간"> – <input type="time" id="fEnd" aria-label="종료 시간"></div></div>
-      <div class="frow top"><span class="lbl">휴게</span>
-        <div class="col"><div id="breakList" class="col"></div>
-          <button type="button" class="linkbtn" data-action="add-break">+ 휴게시간 추가</button></div></div>
-      <div class="calc" id="calc"></div>
-      <button type="button" class="disclose" data-action="toggle-copy" id="copyToggle" aria-expanded="false"></button>
-      <div class="picker" id="picker" hidden></div>
+      <button type="button" class="mbtn addbtn" id="addShift" data-action="open-shift-form" hidden>+ 근무 추가</button>
+      <div id="shiftForm" hidden>
+        <div class="form-head" id="formHead"><span id="formTitle"></span>
+          <button type="button" class="linkbtn" data-action="cancel-edit" id="cancelEdit" hidden>새로 쓰기</button></div>
+        <div class="frow"><label for="fJob">알바</label>
+          <select id="fJob">${state.jobs.map(j => `<option value="${esc(j.id)}">${esc(j.name)} · ${won(j.wage)}</option>`).join('')}</select></div>
+        <div class="frow"><label for="fStart">근무</label>
+          <div class="fctl"><input type="time" id="fStart" aria-label="시작 시간"> – <input type="time" id="fEnd" aria-label="종료 시간"></div></div>
+        <div class="frow top"><span class="lbl">휴게</span>
+          <div class="col"><div id="breakList" class="col"></div>
+            <button type="button" class="linkbtn" data-action="add-break">+ 휴게시간 추가</button></div></div>
+        <div class="calc" id="calc"></div>
+        <button type="button" class="disclose" data-action="toggle-copy" id="copyToggle" aria-expanded="false"></button>
+        <div class="picker" id="picker" hidden></div>
+      </div>
     </div>
-    <div class="sheet-foot">
-      <span class="spacer"></span>
-      <button type="button" class="mbtn" data-action="close-sheet">취소</button>
-      <button type="button" class="mbtn blue" data-action="save-shift">저장</button>
-    </div>`);
-  if (editId) startEdit(editId); else refreshForm();
+    <div class="sheet-foot" id="dayFoot"></div>`);
+  if (editId) startEdit(editId); else renderDaySheet();
+}
+
+/* 목록 · "+ 근무 추가" 버튼 · 입력칸 · 아래 버튼을 한 번에 맞춰 그려요 */
+function renderDaySheet() {
+  if (sheetKind !== 'day' || !pop) return;
   renderDayList();
+  $('#addShift').hidden = pop.formOpen;
+  $('#shiftForm').hidden = !pop.formOpen;
+  renderFoot();
+  if (pop.formOpen) refreshForm();
+}
+
+/* 아래 버튼은 지금 뭘 하고 있는지에 따라 달라져요 */
+function renderFoot() {
+  const foot = $('#dayFoot');
+  if (!pop.formOpen) {                                   // 목록만 보는 중 → 닫기 하나만
+    foot.innerHTML = '<span class="spacer"></span>' +
+      '<button type="button" class="mbtn blue" data-action="close-sheet">닫기</button>';
+    return;
+  }
+  const editing = !!pop.editId;
+  foot.innerHTML = '<span class="spacer"></span>' +
+    '<button type="button" class="mbtn" data-action="cancel-form">취소</button>' +
+    `<button type="button" class="mbtn blue" data-action="save-shift">${editing ? '수정 저장' : '근무 추가'}</button>`;
+}
+
+/* 입력칸 펼치기 / 접기 */
+function openShiftForm() {
+  pop.formOpen = true;
+  resetForm();
+  renderDaySheet();
+  const f = $('#shiftForm');
+  if (f && f.scrollIntoView) f.scrollIntoView({ block: 'nearest' });
+}
+function closeShiftForm() {
+  pop.formOpen = false;
+  pop.editId = null;
+  resetForm();
+  renderDaySheet();
+}
+/* "취소" — 돌아갈 목록이 있으면 목록으로, 없으면 시트를 닫아요 */
+function cancelForm() {
+  if (shiftsOn(pop.date).length) closeShiftForm();
+  else closeSheet();
 }
 
 function resetForm() {
@@ -686,10 +730,10 @@ function startEdit(id) {
   const s = state.shifts.find(x => x.id === id);
   if (!s) return;
   pop.editId = id;
+  pop.formOpen = true;
   pop.jobId = s.jobId; pop.start = s.start; pop.end = s.end;
   pop.breaks = s.breaks.map(b => ({ ...b }));
-  refreshForm();
-  renderDayList();
+  renderDaySheet();
 }
 
 function refreshForm() {
@@ -794,6 +838,9 @@ function saveShift() {
     const s = state.shifts.find(x => x.id === pop.editId);
     if (s) Object.assign(s, data);
   } else {
+    // 같은 날 · 같은 알바 · 같은 시간이 이미 있으면 한 번 물어봐요
+    const dup = state.shifts.some(x => x.date === pop.date && x.jobId === data.jobId && x.start === data.start && x.end === data.end);
+    if (dup && !confirm('이미 같은 근무가 있어요. 그래도 추가할까요?')) return;
     state.shifts.push({ id: uid(), date: pop.date, ...data });
   }
   let copied = 0, skipped = 0;
@@ -807,7 +854,7 @@ function saveShift() {
   state.lastForm = { ...data, breaks: data.breaks.map(b => ({ ...b })) };
   save();
 
-  let msg = wasEdit ? '수정했어요.' : '저장했어요.';
+  let msg = wasEdit ? '수정했어요.' : '근무를 추가했어요.';
   if (copied) msg += ` ${copied}일에 복사했어요.`;
   if (skipped) msg += ` (같은 근무가 있는 ${skipped}일은 건너뜀)`;
   toast(msg);
@@ -815,14 +862,32 @@ function saveShift() {
   renderAll();
 }
 
+/* 근무 삭제 — 바로 지우고 5초 동안 되돌릴 수 있어요. 삭제 때문에 입력칸이 열리지는 않아요. */
 function deleteShift(id) {
-  if (!confirm('이 근무 기록을 삭제할까요?')) return;
-  state.shifts = state.shifts.filter(s => s.id !== id);
-  if (pop && pop.editId === id) { resetForm(); refreshForm(); }
+  const at = state.shifts.findIndex(s => s.id === id);
+  if (at < 0) return;
+  const old = state.shifts[at];
+  const back = { at, shift: { ...old, breaks: old.breaks.map(b => ({ ...b })) } };
+
+  state.shifts.splice(at, 1);
+  // 고치고 있던 근무를 지웠으면 입력칸을 접고 "닫기" 상태로 되돌려요
+  if (pop && pop.editId === id) { pop.editId = null; pop.formOpen = false; resetForm(); }
   save();
-  if (pop) renderDayList();
+  renderDaySheet();
   renderAll();
-  toast('삭제했어요.');
+
+  toast('삭제했어요.', {
+    label: '실행 취소',
+    ms: 5000,
+    fn: () => {
+      if (state.shifts.some(s => s.id === back.shift.id)) return;   // 이미 되돌아왔으면 그냥 둠
+      state.shifts.splice(Math.min(back.at, state.shifts.length), 0, back.shift);
+      save();
+      renderDaySheet();
+      renderAll();
+      toast('되돌렸어요.');
+    }
+  });
 }
 
 /* ---------- 알바 관리 시트 ---------- */
@@ -1312,7 +1377,9 @@ document.addEventListener('click', e => {
     case 'close-sheet': closeSheet(); break;
     case 'edit-shift': startEdit(id); break;
     case 'del-shift': deleteShift(id); break;
-    case 'cancel-edit': resetForm(); refreshForm(); renderDayList(); break;
+    case 'open-shift-form': openShiftForm(); break;
+    case 'cancel-form': cancelForm(); break;
+    case 'cancel-edit': resetForm(); renderDaySheet(); break;
     case 'add-break': {
       const last = pop.breaks[pop.breaks.length - 1];
       const s = last && last.end ? toMin(last.end) + 240 : toMin('12:00');
