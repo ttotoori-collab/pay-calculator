@@ -312,6 +312,24 @@ function renderToolbar() {
   g.setAttribute('aria-pressed', String(ui.group));
   $('#search').classList.toggle('open', ui.searchOpen);
   $('.tb-tools').classList.toggle('searching', ui.searchOpen);
+  syncPanelButtons();
+}
+
+/* 패널·메뉴를 여는 툴바 버튼: 열려 있으면 회색 배경(.on), 닫히면 배경 없음 */
+function syncPanelButtons() {
+  const set = (el, on) => { if (!el) return; el.classList.toggle('on', on); el.setAttribute('aria-expanded', String(on)); };
+  set($('#tagBtn'), sheetKind === 'job' && !!jobEdit && !jobEdit.id);   // "새 알바 등록" 패널
+  set($('#menuBtn'), !$('#menu').hidden);                              // ⋯ 메뉴
+  set($('#searchBtn'), ui.searchOpen);                                 // 돋보기
+  set($('#sbToggle'), $('#window').classList.contains('sb-open'));     // 모바일 사이드바
+}
+
+/* 툴바 버튼으로 새 패널을 열 때는 다른 패널·메뉴를 모두 닫아요 */
+function closePanels() {
+  closeSheet();
+  closeMenu();
+  closeSidebar();
+  if (ui.searchOpen) closeSearch();
 }
 
 /* ---------- 본문 ---------- */
@@ -536,6 +554,7 @@ function openSheet(kind, html) {
   // 애니메이션 다시 시작
   sheetEl.style.animation = 'none'; void sheetEl.offsetWidth; sheetEl.style.animation = '';
   sheetEl.focus({ preventScroll: true });
+  syncPanelButtons();
 }
 function closeSheet() {
   if (sheetWrap.hidden) return;
@@ -547,6 +566,7 @@ function closeSheet() {
     sheetEl.classList.remove('closing');
     sheetEl.innerHTML = '';
   }, reduce ? 0 : 170);
+  syncPanelButtons();
 }
 
 /* ---------- 근무 입력 시트 ---------- */
@@ -897,8 +917,7 @@ const menuEl = $('#menu');
 function toggleMenu(open) {
   const show = open ?? menuEl.hidden;
   menuEl.hidden = !show;
-  $('#menuBtn').setAttribute('aria-expanded', String(show));
-  $('#menuBtn').classList.toggle('on', show);
+  syncPanelButtons();
 }
 function closeMenu() { if (!menuEl.hidden) toggleMenu(false); }
 
@@ -933,8 +952,8 @@ function importData(file) {
    사이드바 (모바일) / 검색
    ============================================ */
 const win = $('#window');
-function openSidebar() { win.classList.add('sb-open'); $('#scrim').hidden = false; }
-function closeSidebar() { win.classList.remove('sb-open'); $('#scrim').hidden = true; }
+function openSidebar() { win.classList.add('sb-open'); $('#scrim').hidden = false; syncPanelButtons(); }
+function closeSidebar() { win.classList.remove('sb-open'); $('#scrim').hidden = true; syncPanelButtons(); }
 const isNarrow = () => window.innerWidth <= 760;
 
 function openSearch() {
@@ -975,7 +994,10 @@ document.addEventListener('click', e => {
       ui.filter = id || null;
       goView('calendar');
       break;
-    case 'open-sidebar': openSidebar(); break;
+    case 'toggle-sidebar':
+      if (win.classList.contains('sb-open')) closeSidebar();
+      else { closePanels(); openSidebar(); }
+      break;
     case 'close-sidebar': closeSidebar(); break;
     /* 툴바 */
     case 'prev-month': moveMonth(-1); break;
@@ -993,12 +1015,18 @@ document.addEventListener('click', e => {
       toast(ui.group ? '알바별로 묶어서 보여줘요.' : '묶어보기를 껐어요.');
       break;
     case 'share': shareImage(); break;
-    case 'add-job': openJobSheet(); break;
-    case 'menu': toggleMenu(); break;
+    case 'add-job': openJobSheet(); break;              // 본문 안의 "알바 등록" 버튼: 항상 열기
+    case 'toggle-add-job':                                // 툴바 태그 아이콘: 열기 ↔ 닫기
+      if (sheetKind === 'job' && jobEdit && !jobEdit.id) closeSheet();   // 취소와 똑같이 닫고 입력 내용은 버림
+      else { closePanels(); openJobSheet(); }
+      break;
+    case 'menu':
+      if (!menuEl.hidden) closeMenu();
+      else { closePanels(); toggleMenu(true); }
+      break;
     case 'search':
-      if (!ui.searchOpen) openSearch();
-      else if (!ui.search) closeSearch();
-      else $('#searchInput').focus();
+      if (ui.searchOpen) closeSearch();                   // 한 번 더 누르면 닫고 검색어 초기화
+      else { closePanels(); openSearch(); }
       break;
     case 'export': closeMenu(); exportData(); break;
     case 'import': closeMenu(); $('#importFile').click(); break;

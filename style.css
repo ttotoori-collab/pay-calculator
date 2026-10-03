@@ -84,7 +84,7 @@ button{cursor:pointer}
   height:28px;min-width:28px;padding:0 5px;border:0;border-radius:6px;background:none;
   display:inline-flex;align-items:center;justify-content:center;gap:1px;color:#8a8a8a;
 }
-.tb-btn:hover{background:rgba(0,0,0,.05);color:#666}
+@media (hover:hover){.tb-btn:hover{background:rgba(0,0,0,.05);color:#666}}   /* 휴대폰에서 누른 뒤 회색이 남지 않게 */
 .tb-btn.on{background:rgba(0,0,0,.08);color:#555}
 .tb-btn.nav{color:#7a7a7a;min-width:30px}
 .tb-btn.nav .ic{width:19px;height:19px}

@@ -37,7 +37,7 @@
     <section class="main">
       <header class="toolbar" id="toolbar">
         <div class="tb-left">
-          <button type="button" class="tb-btn sb-toggle" data-action="open-sidebar" aria-label="사이드바 열기"><span data-icon="sidebar"></span></button>
+          <button type="button" class="tb-btn sb-toggle" id="sbToggle" data-action="toggle-sidebar" aria-label="사이드바" aria-expanded="false" aria-controls="sidebar"><span data-icon="sidebar"></span></button>
           <button type="button" class="tb-btn nav" data-action="prev-month" aria-label="이전 달"><span data-icon="chev-left"></span></button>
           <button type="button" class="tb-btn nav" data-action="next-month" aria-label="다음 달"><span data-icon="chev-right"></span></button>
           <div class="tb-title"><h1>💸 HOW MUCH DID I EARN? 💸</h1><span id="tbMonth"></span></div>
@@ -46,7 +46,7 @@
           <button type="button" class="tb-btn combo" id="modeBtn" data-action="toggle-mode" title="보기 전환 (달력 / 리스트)" aria-label="보기 전환"></button>
           <button type="button" class="tb-btn combo" id="groupBtn" data-action="toggle-group" title="알바별 묶어보기" aria-label="알바별 묶어보기" aria-pressed="false"><span data-icon="group"></span><span data-icon="chev-down" class="mini"></span></button>
           <button type="button" class="tb-btn" data-action="share" title="월별 정산 이미지로 저장" aria-label="월별 정산 이미지로 저장"><span data-icon="share"></span></button>
-          <button type="button" class="tb-btn" data-action="add-job" title="알바 등록" aria-label="알바 등록"><span data-icon="tag"></span></button>
+          <button type="button" class="tb-btn" id="tagBtn" data-action="toggle-add-job" title="알바 등록" aria-label="알바 등록" aria-haspopup="dialog" aria-expanded="false"><span data-icon="tag"></span></button>
           <div class="menu-anchor">
             <button type="button" class="tb-btn combo" id="menuBtn" data-action="menu" title="설정" aria-label="설정" aria-haspopup="menu" aria-expanded="false"><span data-icon="more"></span><span data-icon="chev-down" class="mini"></span></button>
             <div class="menu" id="menu" role="menu" hidden>
@@ -58,7 +58,7 @@
           </div>
           <div class="search" id="search">
             <input type="search" id="searchInput" placeholder="근무 검색" aria-label="근무 검색" autocomplete="off">
-            <button type="button" class="tb-btn" data-action="search" title="근무 검색" aria-label="근무 검색"><span data-icon="search"></span></button>
+            <button type="button" class="tb-btn" id="searchBtn" data-action="search" title="근무 검색" aria-label="근무 검색" aria-expanded="false"><span data-icon="search"></span></button>
           </div>
         </div>
       </header>
