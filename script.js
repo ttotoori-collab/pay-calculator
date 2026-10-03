@@ -69,6 +69,7 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const TIME_RE = /^\d{2}:\d{2}$/;
 const safeColor = c => (/^#[0-9a-f]{6}$/i.test(c) ? c : TAGS[0].color);
 const TODAY = keyOf(new Date());
+const THIS_M = (() => { const n = new Date(); return { y: n.getFullYear(), m: n.getMonth() }; })();
 
 /* ============================================
    저장 / 불러오기
@@ -301,9 +302,34 @@ function renderSidebar() {
     </button>`;
 }
 
+/* ---------- 연도·월 고르기 (날짜 글씨를 누르면 열려요) ---------- */
+let ymOpen = false, ymYear = START.y;
+
+function renderYmPicker() {
+  const el = $('#ymPicker');
+  if (!ymOpen) { el.hidden = true; el.innerHTML = ''; return; }
+  let g = '';
+  for (let i = 0; i < 12; i++) {
+    const on = ymYear === ui.y && i === ui.m;
+    const now = ymYear === THIS_M.y && i === THIS_M.m;
+    g += `<button type="button" class="ym-m ${on ? 'on' : ''} ${now && !on ? 'now' : ''}" data-action="pick-ym" data-y="${ymYear}" data-m="${i}" aria-current="${on}">${i + 1}월</button>`;
+  }
+  el.innerHTML = `
+    <div class="ym-head">
+      <button type="button" class="tb-btn" data-action="ym-year" data-d="-1" aria-label="이전 해">${icon('chev-left')}</button>
+      <b>${ymYear}년</b>
+      <button type="button" class="tb-btn" data-action="ym-year" data-d="1" aria-label="다음 해">${icon('chev-right')}</button>
+    </div>
+    <div class="ym-grid">${g}</div>`;
+  el.hidden = false;
+}
+function openYm() { ymOpen = true; ymYear = ui.y; renderYmPicker(); syncPanelButtons(); }
+function closeYm() { if (!ymOpen) return; ymOpen = false; renderYmPicker(); syncPanelButtons(); }
+
 /* ---------- 툴바 ---------- */
 function renderToolbar() {
-  $('#tbMonth').textContent = `${ui.y}.${pad(ui.m + 1)}`;
+  $('#monthBtn').textContent = `${ui.y}년 ${ui.m + 1}월`;
+  $('#todayBtn').disabled = ui.y === THIS_M.y && ui.m === THIS_M.m;   // 이번 달을 보고 있으면 흐리게
   const listMode = ui.view === 'calendar' && ui.mode === 'list';
   $('#modeBtn').innerHTML = icon(listMode ? 'list' : 'grid') + `<span class="mini">${icon('updown')}</span>`;
   $('#modeBtn').title = listMode ? '달력으로 보기' : '리스트로 보기';
@@ -321,6 +347,7 @@ function syncPanelButtons() {
   set($('#tagBtn'), sheetKind === 'job' && !!jobEdit && !jobEdit.id);   // "새 알바 등록" 패널
   set($('#menuBtn'), !$('#menu').hidden);                              // ⋯ 메뉴
   set($('#searchBtn'), ui.searchOpen);                                 // 돋보기
+  set($('#monthBtn'), ymOpen);                                         // 연도·월 고르기
   set($('#sbToggle'), $('#window').classList.contains('sb-open'));     // 모바일 사이드바
 }
 
@@ -328,6 +355,7 @@ function syncPanelButtons() {
 function closePanels() {
   closeSheet();
   closeMenu();
+  closeYm();
   closeSidebar();
   if (ui.searchOpen) closeSearch();
 }
@@ -544,7 +572,7 @@ const sheetWrap = $('#sheetWrap'), sheetEl = $('#sheet');
 let sheetKind = null, closeTimer = null;
 
 function openSheet(kind, html) {
-  closeMenu(); closeSidebar();
+  closeMenu(); closeYm(); closeSidebar();
   clearTimeout(closeTimer);
   sheetKind = kind;
   sheetEl.classList.remove('closing');
@@ -966,12 +994,66 @@ function closeSearch() {
 }
 
 /* ============================================
+   달력 스와이프 (왼쪽 → 다음달 / 오른쪽 → 전달)
+   ============================================ */
+let swipe = null, swipeGuard = 0;
+const canSwipeMonth = () =>
+  ui.view === 'calendar' && ui.mode === 'grid' && !ui.search.trim() &&
+  sheetWrap.hidden && !!state.jobs.length;
+
+content.addEventListener('touchstart', e => {
+  swipeGuard = 0;
+  if (e.touches.length !== 1 || !canSwipeMonth()) { swipe = null; return; }
+  const t = e.touches[0];
+  swipe = { x: t.clientX, y: t.clientY, dx: 0, axis: null };
+}, { passive: true });
+
+content.addEventListener('touchmove', e => {
+  if (!swipe || e.touches.length !== 1) { swipe = null; return; }
+  const t = e.touches[0], dx = t.clientX - swipe.x, dy = t.clientY - swipe.y;
+  // 가로·세로 중 먼저 움직인 쪽으로 정해요 (세로면 그냥 스크롤)
+  if (!swipe.axis && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) swipe.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+  if (swipe.axis === 'x') swipe.dx = dx;
+}, { passive: true });
+
+content.addEventListener('touchend', e => {
+  const t = swipe; swipe = null;
+  if (!t || t.axis !== 'x') return;
+  if (Math.abs(t.dx) > 10) {
+    swipeGuard = Date.now();        // 민 손가락이 날짜를 누른 것처럼 되지 않게
+    if (e.cancelable) e.preventDefault();
+  }
+  if (Math.abs(t.dx) < 55 || !canSwipeMonth()) return;
+  moveMonth(t.dx < 0 ? 1 : -1);
+}, { passive: false });
+
+content.addEventListener('touchcancel', () => { swipe = null; }, { passive: true });
+
+/* ============================================
    이벤트
    ============================================ */
+/* 달이 바뀔 때 살짝 옆에서 넘어오게 */
+function slideContent(dir) {
+  content.classList.remove('slide-next', 'slide-prev');
+  void content.offsetWidth;                                 // 애니메이션 다시 시작
+  content.classList.add(dir > 0 ? 'slide-next' : 'slide-prev');
+}
+content.addEventListener('animationend', () => content.classList.remove('slide-next', 'slide-prev'));
+
 function moveMonth(delta) {
   const d = new Date(ui.y, ui.m + delta, 1);
   ui.y = d.getFullYear(); ui.m = d.getMonth();
+  if (ymOpen) ymYear = ui.y;
   renderAll();
+  slideContent(delta);
+}
+function goMonth(y, m) {
+  const dir = (y * 12 + m) - (ui.y * 12 + ui.m);
+  if (!dir) { closeYm(); return; }
+  ui.y = y; ui.m = m;
+  closeYm();
+  renderAll();
+  slideContent(dir);
 }
 function goView(v) {
   ui.view = v;
@@ -982,8 +1064,14 @@ function goView(v) {
 }
 
 document.addEventListener('click', e => {
+  if (swipeGuard) {   // 스와이프 직후에 생기는 가짜 탭은 한 번 넘겨요
+    const fake = Date.now() - swipeGuard < 400;
+    swipeGuard = 0;
+    if (fake) return;
+  }
   // 바깥을 누르면 메뉴 닫기
   if (!menuEl.hidden && !e.target.closest('.menu-anchor')) closeMenu();
+  if (ymOpen && !e.target.closest('.ym-anchor')) closeYm();
   const t = e.target.closest('[data-action]');
   if (!t) return;
   const id = t.dataset.id;
@@ -1002,6 +1090,13 @@ document.addEventListener('click', e => {
     /* 툴바 */
     case 'prev-month': moveMonth(-1); break;
     case 'next-month': moveMonth(1); break;
+    case 'toggle-ym':
+      if (ymOpen) closeYm();
+      else { closePanels(); openYm(); }
+      break;
+    case 'ym-year': ymYear += Number(t.dataset.d); renderYmPicker(); break;
+    case 'pick-ym': goMonth(Number(t.dataset.y), Number(t.dataset.m)); break;
+    case 'go-today': goMonth(THIS_M.y, THIS_M.m); break;
     case 'toggle-mode':
       if (ui.view !== 'calendar' || ui.search) { ui.view = 'calendar'; ui.mode = 'list'; ui.search = ''; ui.searchOpen = false; $('#searchInput').value = ''; }
       else ui.mode = ui.mode === 'grid' ? 'list' : 'grid';
@@ -1127,6 +1222,7 @@ document.addEventListener('submit', e => {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (!menuEl.hidden) { closeMenu(); return; }
+    if (ymOpen) { closeYm(); $('#monthBtn').focus(); return; }
     if (!sheetWrap.hidden) { closeSheet(); return; }
     if (win.classList.contains('sb-open')) { closeSidebar(); return; }
     if (ui.searchOpen) { closeSearch(); return; }

@@ -29,6 +29,7 @@
     <!-- 사이드바 -->
     <aside class="sidebar" id="sidebar" aria-label="사이드바">
       <div class="traffic" aria-hidden="true"><span class="tl red"></span><span class="tl yellow"></span><span class="tl green"></span></div>
+      <h1 class="sb-title">💸 HOW MUCH DID I EARN? 💸</h1>
       <nav id="sbNav"></nav>
     </aside>
     <div class="scrim" id="scrim" data-action="close-sidebar" hidden></div>
@@ -36,11 +37,19 @@
     <!-- 본문 -->
     <section class="main">
       <header class="toolbar" id="toolbar">
-        <div class="tb-left">
-          <button type="button" class="tb-btn sb-toggle" id="sbToggle" data-action="toggle-sidebar" aria-label="사이드바" aria-expanded="false" aria-controls="sidebar"><span data-icon="sidebar"></span></button>
-          <button type="button" class="tb-btn nav" data-action="prev-month" aria-label="이전 달"><span data-icon="chev-left"></span></button>
-          <button type="button" class="tb-btn nav" data-action="next-month" aria-label="다음 달"><span data-icon="chev-right"></span></button>
-          <div class="tb-title"><h1>💸 HOW MUCH DID I EARN? 💸</h1><span id="tbMonth"></span></div>
+        <div class="tb-date">
+          <div class="tb-date-l">
+            <button type="button" class="tb-btn sb-toggle" id="sbToggle" data-action="toggle-sidebar" aria-label="사이드바" aria-expanded="false" aria-controls="sidebar"><span data-icon="sidebar"></span></button>
+          </div>
+          <div class="tb-date-c ym-anchor">
+            <button type="button" class="tb-btn nav" data-action="prev-month" aria-label="이전 달"><span data-icon="chev-left"></span></button>
+            <button type="button" class="month-btn" id="monthBtn" data-action="toggle-ym" aria-haspopup="dialog" aria-expanded="false" aria-controls="ymPicker" title="연도·월 고르기"></button>
+            <button type="button" class="tb-btn nav" data-action="next-month" aria-label="다음 달"><span data-icon="chev-right"></span></button>
+            <div class="ym" id="ymPicker" role="dialog" aria-label="연도·월 고르기" hidden></div>
+          </div>
+          <div class="tb-date-r">
+            <button type="button" class="today-btn" id="todayBtn" data-action="go-today" title="이번 달로 돌아오기">오늘</button>
+          </div>
         </div>
         <div class="tb-tools">
           <button type="button" class="tb-btn combo" id="modeBtn" data-action="toggle-mode" title="보기 전환 (달력 / 리스트)" aria-label="보기 전환"></button>
