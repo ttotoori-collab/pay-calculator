@@ -1,0 +1,64 @@
+# CLAUDE.md — 알바비 계산기 (💸 How much did I earn? 💸)
+
+이 저장소에서 작업할 때 먼저 읽어 주세요. 사용자와는 **한국어**로 대화해요.
+
+## 한눈에 보기
+- 알바별 시급·근무시간·주휴수당을 계산하는 웹앱. **HTML / CSS / JavaScript만** 사용 (빌드 도구·프레임워크 없음)
+- 사이트: https://ttotoori-collab.github.io/pay-calculator/
+- 배포: `main`에 push하면 `.github/workflows/pages.yml`이 GitHub Pages로 자동 배포 (Pages Source = GitHub Actions)
+- PWA: 홈 화면 설치 + 오프라인 실행
+
+## 파일
+| 파일 | 역할 |
+|---|---|
+| `index.html` | 창 구조(사이드바·툴바·본문·시트), PWA 메타태그 |
+| `style.css` | Finder 창 디자인, 모바일·안전영역(safe-area) 처리 |
+| `script.js` | 데이터·계산·화면 그리기·이벤트 전부 |
+| `sw.js` | service worker (앱 파일 network-first, 글꼴 CDN cache-first) |
+| `manifest.json` | 앱 이름 "What's in my wallet" / 짧은 이름 "Wallet", standalone, 테마·배경 #333333 |
+| `icons/` | 강아지 아이콘. `source.png`(원본), `icon-192/512`, `icon-512-maskable`, `apple-touch-icon`(180), `favicon-32` |
+
+## 데이터 (localStorage)
+- 키: `seran-albailgi-v1` — **바꾸지 마세요** (사용자 기록이 사라져요)
+- `jobs`: `{ id, name, wage, color, weeklyBonus }`
+- `shifts`: `{ id, jobId, date:'YYYY-MM-DD', start:'HH:MM', end:'HH:MM', breaks:[{start,end}] }`
+- `lastForm`: 마지막으로 입력한 근무 (새 근무 창 기본값)
+- 불러올 때 `normalize()`로 검사. 예전 데이터에 없는 값은 안전한 기본값으로 채움 (예: `weeklyBonus` 없으면 `false`)
+- 새 필드를 추가할 때도 **기존 데이터가 깨지지 않게** normalize에 기본값을 넣을 것
+- 백업: ⋯ 메뉴 → JSON 내보내기/불러오기/모두 지우기
+
+## 계산 규칙 (사용자가 정한 것 — 함부로 바꾸지 않기)
+- 순수 근무시간 = 종료 − 시작 − 휴게시간. 휴게는 여러 개 가능, 겹치면 한 번만, 근무시간 밖은 제외
+- 종료가 시작보다 이르면 다음 날 새벽까지 일한 걸로 계산 (야간)
+- 주는 **월~일**, 알바별로 따로 계산
+- **주휴수당은 "주휴수당 별도 지급"을 체크한 알바만** (기본값은 체크 해제 = 시급에 주휴 포함)
+  - 그 주 근무시간이 15시간 이상이면 지급
+  - 주휴시간 = (주 근무시간 ÷ 40) × 8, 최대 8시간
+  - 주휴수당 = 주휴시간 × 시급 (주 40시간 이하면 그 주 급여의 20%와 같음)
+- 기본급은 **실제 근무한 날짜의 달**, 주휴수당은 **그 주 일요일이 있는 달**에 넣음
+- 시급을 바꾸면 지난 기록도 새 시급으로 다시 계산됨
+- 금액은 원 단위 반올림, 천 단위 쉼표
+- 확인용 예: 9:00~20:00, 휴게 12~13시·17~18시 → 9시간
+
+## 디자인: macOS Finder 창
+- 바깥 #ececec, 가운데 창(모서리 10px, 큰 그림자). 글꼴 -apple-system, "Apple SD Gothic Neo", Pretendard, 13px
+- 사이드바 #e3e3e3, 폭 190px, 신호등 장식 3개
+  - Favorites: Calendar / Jobs / Monthly Pay / Weekly Bonus (아이콘 연분홍 #e88aae 선)
+  - iCloud: This Month(총 알바비), Total Hours
+  - Tags: 알바 = 색 동그라미 + 이름 (주휴 체크한 알바는 회색 "주휴" 배지). 누르면 그 알바만, "All Tags…"는 전체
+- 태그 색은 등록 순서대로 Red → Orange → Yellow → Green → Blue → Purple → Gray (`TAGS`, `nextTagColor()`)
+- 툴바: `<` `>` 달 이동, 제목 "💸 HOW MUCH DID I EARN? 💸" + 작은 "2026.10"
+  - 보기 전환(달력/리스트), 묶어보기(알바별), 공유(월별 정산 PNG 저장), 태그(알바 등록), ⋯(설정 메뉴), 돋보기(검색)
+  - **패널·메뉴를 여는 버튼(태그, ⋯, 돋보기, 모바일 사이드바)은 토글**: 한 번 더 누르면 닫힘, 열려 있는 동안만 회색 배경(`.on`). 툴바로 새 패널을 열면 다른 패널은 닫음 (`closePanels()`, `syncPanelButtons()`)
+- 달력은 월요일 시작(주휴 기준과 맞춤), 근무한 날은 알바 색 점 + "9h", 오늘은 빨간 동그라미
+- 근무 입력·알바 등록은 툴바 아래로 내려오는 macOS 시트. 버튼은 파란 "저장" / 흰 "취소"
+- 반복 입력: 시트 안 간이 달력에서 복사할 날짜 선택, "이번 달 ○요일 전체 선택"
+- 모바일(≤760px): 사이드바 숨기고 왼쪽 위 버튼으로 열기, 표는 카드 형태, 입력칸 16px(아이폰 확대 방지)
+- 기본 화면은 2026년 10월 (`START`). 알바가 없으면 알바 등록부터
+
+## 고칠 때 꼭 지킬 것
+- 앱 파일(아이콘 포함)을 바꾸면 **`sw.js`의 `VERSION`을 올리기** (지금 `wallet-v2`). 새 파일이 생기면 `APP_SHELL`에도 추가
+- 사용자 입력은 화면에 넣기 전에 `esc()`로 처리
+- 고친 뒤 확인: 계산 결과(위 예시), PC 화면, 휴대폰 폭(390px) 가로 스크롤 없음, 콘솔 오류 없음
+- service worker는 `file://`에서 동작하지 않으니 오프라인 확인은 `python3 -m http.server`로
+- 커밋 메시지는 한국어로, 무엇을 바꿨는지 간단히
