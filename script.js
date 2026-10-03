@@ -642,8 +642,8 @@ function summaryTable(c) {
   return `<table class="ftable sum">
       <thead><tr><th>알바</th><th class="r">근무시간</th><th class="r">기본급</th><th class="r">주휴수당</th><th class="r">합계</th></tr></thead>
       <tbody>${rows}</tbody></table>
-    <div class="grand"><span>${ui.m + 1}월 총 알바비</span><b>${won(c.total)}</b></div>
-    ${c.deducted ? `<div class="grand net"><span>실수령액 <small>공제 ${won(c.tax + c.ins)}</small></span><b>${won(c.net)}</b></div>` : ''}`;
+    <div class="grand"><span>${ui.m + 1}월 ${c.deducted ? '받을 돈' : '총 알바비'}</span><b>${won(c.deducted ? c.net : c.total)}</b></div>
+    ${c.deducted ? `<div class="grand-sub">세전 ${won(c.total)} · 공제 ${minus(c.tax + c.ins)}</div>` : ''}`;
 }
 
 /* Monthly Pay */
@@ -1266,20 +1266,18 @@ async function shareImage() {
   });
   y = top + 22;
   ctx.fillStyle = P.line; ctx.fillRect(L - 8, y - 14, R - L + 16, 1);
-  if (c.deducted) {
-    // 공제가 있으면: 총 알바비는 작게, 실수령액을 크게
-    ctx.textAlign = 'left'; ctx.fillStyle = P.muted; ctx.font = `400 12.5px ${F}`;
-    ctx.fillText(`${ui.m + 1}월 총 알바비`, L, y + 6);
-    ctx.textAlign = 'right'; ctx.fillStyle = P.text; ctx.font = `500 13px ${F}`;
-    ctx.fillText(`${won(c.total)}  −${won(c.tax + c.ins).replace('원', '')}원 공제`, R, y + 6);
-    y += 22;
-  }
+  // 큰 숫자는 실수령액, 세전·공제는 바로 아래 작게
   ctx.textAlign = 'left'; ctx.fillStyle = P.sub; ctx.font = `500 14px ${F}`;
-  ctx.fillText(`${ui.m + 1}월 ${c.deducted ? '실수령액' : '총 알바비'}`, L, y + 16);
+  ctx.fillText(`${ui.m + 1}월 ${c.deducted ? '받을 돈' : '총 알바비'}`, L, y + 16);
   ctx.textAlign = 'right'; ctx.fillStyle = P.total; ctx.font = `700 26px ${F}`;
   ctx.fillText(won(c.deducted ? c.net : c.total), R, y + 20);
+  if (c.deducted) {
+    ctx.textAlign = 'right'; ctx.fillStyle = P.muted; ctx.font = `400 11.5px ${F}`;
+    ctx.fillText(`세전 ${won(c.total)} · 공제 ${minus(c.tax + c.ins)}`, R, y + 42);
+  }
   ctx.textAlign = 'left'; ctx.fillStyle = P.faint; ctx.font = `400 11px ${F}`;
-  ctx.fillText(`근무 ${fmtH(c.minutes)} · 주휴 받은 주 ${c.paidWeeks}주 · ${TODAY.replace(/-/g, '.')} 기준`, L, y + 46);
+  ctx.fillText(`근무 ${fmtH(c.minutes)} · 주휴 받은 주 ${c.paidWeeks}주 · ${TODAY.replace(/-/g, '.')} 기준`,
+    L, y + (c.deducted ? 66 : 46));
 
   const blob = await new Promise(res => cv.toBlob(res, 'image/png'));
   if (!blob) { toast('이미지를 만들지 못했어요.'); return; }
