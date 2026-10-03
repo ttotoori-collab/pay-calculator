@@ -5,7 +5,9 @@
    ============================================ */
 
 const STORE_KEY = 'seran-albailgi-v1';
+const BACKUP_KEY = 'seran-albailgi-v1-backup';   // 직전 상태 사본 (주 기록이 깨졌을 때 되살리기용)
 const THEME_KEY = 'wallet-theme';          // 화면 모드만 따로 저장 (근무 기록과 별개)
+const NUDGE_DAYS = 14;                     // 이만큼 백업을 안 받으면 한 번 알려줘요
 const START = { y: 2026, m: 9 };          // 기본 화면: 2026년 10월 (월은 0부터)
 const TAGS = [                             // Finder 태그 색, 등록 순서대로 자동 배정
   { name: 'Red', color: '#ec5a57' },
@@ -75,7 +77,7 @@ const THIS_M = (() => { const n = new Date(); return { y: n.getFullYear(), m: n.
 /* ============================================
    저장 / 불러오기
    ============================================ */
-const defaultState = () => ({ version: 2, jobs: [], shifts: [], lastForm: null });
+const defaultState = () => ({ version: 2, jobs: [], shifts: [], lastForm: null, lastExport: 0 });
 
 function normalize(d) {
   if (!d || typeof d !== 'object') return defaultState();
@@ -101,26 +103,81 @@ function normalize(d) {
   return {
     ...d,                       // 예전 버전에서 쓰던 값(메모 등)은 그대로 보관
     version: 2, jobs, shifts,
-    lastForm: d.lastForm && TIME_RE.test(d.lastForm.start) ? d.lastForm : null
+    lastForm: d.lastForm && TIME_RE.test(d.lastForm.start) ? d.lastForm : null,
+    lastExport: Math.max(0, Number(d.lastExport) || 0)
   };
 }
 
+/* ---------- 저장소 상태 ----------
+   기록은 이 브라우저 안에만 있어요. 그래서 못 읽었을 때 함부로 덮어쓰면 영영 사라져요.
+   - locked: 기록을 못 읽은 상태. 복구를 고르기 전까지 저장을 아예 막아요
+   - broken: 못 읽은 원본 문자열 (파일로 내려받아 둘 수 있게 보관)
+*/
+const store = { ok: true, locked: false, broken: null, recovered: false, persisted: null };
+
+function readKey(k) {
+  try { return localStorage.getItem(k); }
+  catch (e) { store.ok = false; return null; }   // 시크릿 모드 등으로 저장소 자체를 못 쓰는 경우
+}
+function parseState(raw) {
+  const n = normalize(JSON.parse(raw));
+  if (!Array.isArray(n.jobs) || !Array.isArray(n.shifts)) throw new Error('모양이 이상해요');
+  return n;
+}
+
 function load() {
+  const raw = readKey(STORE_KEY);
+  if (!store.ok || !raw) return defaultState();     // 저장소를 못 쓰거나, 처음 쓰는 사람
   try {
-    const raw = localStorage.getItem(STORE_KEY);
-    return raw ? normalize(JSON.parse(raw)) : defaultState();
+    return parseState(raw);
   } catch (e) {
+    // 주 기록이 깨졌으면 사본으로 되살려 봐요
+    const bak = readKey(BACKUP_KEY);
+    if (bak) {
+      try { const s2 = parseState(bak); store.recovered = true; store.broken = raw; return s2; }
+      catch (e2) { /* 사본도 못 읽음 */ }
+    }
+    // 둘 다 못 읽음 → 덮어쓰지 않고 멈춰요 (원본은 저장소에 그대로 둬요)
+    store.locked = true; store.broken = raw;
     return defaultState();
   }
 }
 
 let saveWarned = false;
 function save() {
+  if (store.locked) return;                        // 복구를 고르기 전에는 절대 덮어쓰지 않아요
+  let json;
+  try { json = JSON.stringify(state); } catch (e) { return; }
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(state));
-  } catch (e) {
-    if (!saveWarned) { toast('브라우저에 저장하지 못했어요. 시크릿 모드인지 확인해 주세요.'); saveWarned = true; }
+    const prev = localStorage.getItem(STORE_KEY);
+    if (prev && prev !== json) localStorage.setItem(BACKUP_KEY, prev);   // 직전 상태를 사본으로 남김
+    localStorage.setItem(STORE_KEY, json);
+    store.ok = true;
+    return;
+  } catch (e) { /* 아래에서 다시 시도 */ }
+  try {                                            // 자리가 모자라면 사본부터 버리고 다시
+    localStorage.removeItem(BACKUP_KEY);
+    localStorage.setItem(STORE_KEY, json);
+    store.ok = true;
+    return;
+  } catch (e) { /* 진짜로 저장 불가 */ }
+  store.ok = false;
+  if (!saveWarned) {
+    saveWarned = true;
+    toast('기록을 저장하지 못했어요. 시크릿 모드이거나 저장 공간이 부족할 수 있어요.', {
+      label: '백업 받기', ms: 8000, fn: exportData
+    });
   }
+}
+
+/* 브라우저에게 "이 기록은 함부로 지우지 말아 주세요"라고 요청해요 (되면 좋고, 안 돼도 그만) */
+async function askPersist() {
+  try {
+    if (!navigator.storage || !navigator.storage.persisted) return;
+    store.persisted = await navigator.storage.persisted();
+    if (!store.persisted && navigator.storage.persist) store.persisted = await navigator.storage.persist();
+  } catch (e) { /* 무시 */ }
+  renderStoreNote();
 }
 
 /* ============================================
@@ -400,8 +457,26 @@ function closePanels() {
   if (ui.searchOpen) closeSearch();
 }
 
+/* ---------- 기록을 못 읽었을 때: 복구 화면 ---------- */
+function renderLocked() {
+  setStatus('기록을 읽지 못했어요 — 저장을 멈춰 뒀어요');
+  content.innerHTML = `<div class="empty recover">
+    <div class="big">🛟</div>
+    <h2>저장된 기록을 읽지 못했어요</h2>
+    <p>기록이 사라지지 않도록 <b>지금은 저장을 멈춰 뒀어요.</b><br>
+      저장소에 있던 원래 값은 지우지 않고 그대로 두었어요. 아래에서 하나를 골라 주세요.</p>
+    <div class="recover-btns">
+      <button type="button" class="mbtn blue" data-action="import">백업 파일로 되살리기…</button>
+      <button type="button" class="mbtn" data-action="download-broken">못 읽은 기록 내려받기</button>
+      <button type="button" class="mbtn danger" data-action="start-over">새로 시작하기…</button>
+    </div>
+    <p class="note">"새로 시작하기"를 누르면 못 읽은 기록이 완전히 지워져요. 그 전에 꼭 내려받아 두세요.</p>
+  </div>`;
+}
+
 /* ---------- 본문 ---------- */
 function renderContent() {
+  if (store.locked) { renderLocked(); return; }
   if (ui.search.trim()) renderSearch();
   else if (ui.view === 'jobs') renderJobs();
   else if (ui.view === 'pay') renderPay();
@@ -1131,11 +1206,29 @@ const menuEl = $('#menu');
 function toggleMenu(open) {
   const show = open ?? menuEl.hidden;
   menuEl.hidden = !show;
+  if (show) renderStoreNote();
   syncPanelButtons();
+}
+
+/* 기록이 어디에 저장되는지 · 마지막 백업이 언제였는지 메뉴에 적어 둬요 */
+function renderStoreNote() {
+  const el = $('#storeNote');
+  if (!el) return;
+  const days = state.lastExport ? Math.floor((Date.now() - state.lastExport) / 86400000) : null;
+  const last = days === null ? '아직 백업한 적 없어요'
+    : days === 0 ? '오늘 백업했어요'
+    : `마지막 백업 ${days}일 전`;
+  let warn = '';
+  if (!store.ok) warn = '<br><b class="bad">이 브라우저에는 저장이 안 돼요. 끄면 사라져요.</b>';
+  else if (store.persisted === false) warn = '<br>저장 공간이 부족하면 브라우저가 지울 수 있어요.';
+  el.innerHTML = `기록은 <b>이 브라우저에만</b> 저장돼요.<br>${last}.${warn}`;
 }
 function closeMenu() { if (!menuEl.hidden) toggleMenu(false); }
 
 function exportData() {
+  state.lastExport = Date.now();
+  save();
+  renderStoreNote();
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -1144,6 +1237,18 @@ function exportData() {
   setTimeout(() => URL.revokeObjectURL(a.href), 1500);
   toast('백업 파일을 저장했어요.');
 }
+/* 못 읽은 기록을 파일로 내려받아 두기 (나중에 손으로 고쳐 볼 수 있게) */
+function downloadBroken() {
+  if (!store.broken) { toast('내려받을 기록이 없어요.'); return; }
+  const blob = new Blob([store.broken], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `wallet-broken-${TODAY}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+  toast('내려받았어요. 이 파일은 지우지 말고 보관해 주세요.');
+}
+
 function importData(file) {
   const r = new FileReader();
   r.onload = () => {
@@ -1153,6 +1258,7 @@ function importData(file) {
       const next = normalize(d);
       if (!confirm(`알바 ${next.jobs.length}개, 근무 기록 ${next.shifts.length}개를 불러올까요?\n지금 기록은 이 파일 내용으로 바뀌어요.`)) return;
       state = next; ui.filter = null;
+      store.locked = false; store.broken = null;      // 복구됐으니 다시 저장할 수 있어요
       save(); closeSheet(); renderAll();
       toast('불러왔어요.');
     } catch (e) {
@@ -1353,6 +1459,15 @@ document.addEventListener('click', e => {
       break;
     case 'export': closeMenu(); exportData(); break;
     case 'import': closeMenu(); $('#importFile').click(); break;
+    case 'download-broken': downloadBroken(); break;
+    case 'start-over':
+      if (!confirm('못 읽은 기록을 완전히 지우고 새로 시작할까요?\n되돌릴 수 없어요. 먼저 "못 읽은 기록 내려받기"를 해두는 걸 추천해요.')) return;
+      try { localStorage.removeItem(STORE_KEY); localStorage.removeItem(BACKUP_KEY); } catch (e) { /* 무시 */ }
+      store.locked = false; store.broken = null;
+      state = defaultState(); ui.filter = null; ui.view = 'jobs';
+      save(); renderAll();
+      toast('새로 시작해요. 알바부터 등록해 주세요.');
+      break;
     case 'reset-all':
       closeMenu();
       if (!confirm('알바와 근무 기록을 모두 지울까요?\n되돌릴 수 없어요. 먼저 백업 파일을 받아두는 걸 추천해요.')) return;
@@ -1491,9 +1606,25 @@ function hideToast() {
    ============================================ */
 $$('[data-icon]').forEach(el => { el.innerHTML = icon(el.dataset.icon); });
 applyTheme();
-if (!state.jobs.length) ui.view = 'jobs';
+if (!store.locked && !state.jobs.length) ui.view = 'jobs';
 renderAll();
-if (!state.jobs.length) setTimeout(() => openJobSheet(), 350);   // 첫 화면: 알바 등록
+askPersist();
+
+if (store.locked) {
+  // 아무것도 덮어쓰지 않아요. 사용자가 복구 방법을 고를 때까지 기다려요
+  setTimeout(() => toast('기록을 읽지 못했어요. 저장을 멈추고 기다릴게요.', { label: '기록 내려받기', ms: 8000, fn: downloadBroken }), 400);
+} else if (store.recovered) {
+  setTimeout(() => toast('기록을 사본에서 되살렸어요. 빠진 게 없는지 확인해 주세요.', { label: '백업 받기', ms: 8000, fn: exportData }), 400);
+} else if (!store.ok) {
+  setTimeout(() => toast('이 브라우저에는 기록을 저장할 수 없어요. 창을 닫으면 사라져요.', { label: '백업 받기', ms: 8000, fn: exportData }), 400);
+} else {
+  if (!state.jobs.length) setTimeout(() => openJobSheet(), 350);   // 첫 화면: 알바 등록
+  // 기록이 쌓였는데 한동안 백업을 안 받았으면 한 번만 알려줘요
+  const old = !state.lastExport || Date.now() - state.lastExport > NUDGE_DAYS * 86400000;
+  if (state.shifts.length >= 5 && old) {
+    setTimeout(() => toast('기록이 이 브라우저에만 있어요. 백업 파일을 받아두면 안전해요.', { label: '백업 받기', ms: 8000, fn: exportData }), 2500);
+  }
+}
 
 /* PWA: 인터넷 없이도 열리게 service worker 등록 (http(s)에서만 동작) */
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {

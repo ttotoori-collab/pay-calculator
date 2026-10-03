@@ -4,7 +4,7 @@
    - 글꼴 같은 외부 파일: 저장해둔 걸 먼저 (cache-first)
    파일을 바꾸면 VERSION만 올려 주세요.
    ============================================ */
-const VERSION = 'wallet-v7';   // v7: 근무 입력칸 접기 + 삭제 실행 취소
+const VERSION = 'wallet-v8';   // v8: 기록 보호 (사본·덮어쓰기 금지·복구 화면)
 const APP_SHELL = [
   './',
   './index.html',
