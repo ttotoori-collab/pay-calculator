@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>세란의 알바일기</title>
+<meta name="description" content="알바별 시급·근무시간·주휴수당을 계산하는 알바비 계산기">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page">
+
+  <!-- 맨 위 작은 링크 줄 -->
+  <nav class="toplinks" aria-label="블로그 메뉴">
+    <button type="button" data-action="home">홈</button><span>|</span><button type="button" data-action="settings">설정</button><span>|</span><button type="button" data-action="backup">백업</button>
+  </nav>
+
+  <div class="frame">
+    <!-- 헤더 배너 -->
+    <header class="banner">
+      <span class="bubble b1"></span><span class="bubble b2"></span><span class="bubble b3"></span>
+      <span class="bubble b4"></span><span class="bubble b5"></span><span class="bubble b6"></span>
+      <span class="bubble b7"></span><span class="bubble b8"></span>
+      <span class="spark s1">✦</span><span class="spark s2">♡</span><span class="spark s3">✧</span>
+      <div class="banner-text">
+        <h1>세란의 알바일기</h1>
+        <p class="sub">アルバイト日記 ~ my little part-time diary ~</p>
+      </div>
+      <div class="banner-since">since 2026.10 ✿</div>
+    </header>
+
+    <!-- 탭 메뉴 -->
+    <nav class="tabs" aria-label="탭">
+      <div class="tabs-side">
+        <button type="button" data-tab="calendar">calendar</button><span class="sep">|</span><button type="button" data-tab="pay">pay</button>
+      </div>
+      <div class="tabs-side">
+        <button type="button" data-tab="job">job</button><span class="sep">|</span><button type="button" data-tab="memo">memo</button>
+      </div>
+    </nav>
+
+    <div class="layout">
+      <!-- 왼쪽 사이드바 -->
+      <aside class="side side-left">
+        <section class="box" id="profileBox"></section>
+        <section class="box" id="categoryBox"></section>
+      </aside>
+
+      <!-- 가운데 본문 -->
+      <main class="content" id="content"></main>
+
+      <!-- 오른쪽 사이드바 -->
+      <aside class="side side-right">
+        <section class="box" id="activityBox"></section>
+        <section class="box" id="miniBox"></section>
+        <div class="rss"><span class="rss-ico">RSS</span> RSS 2.0 | ATOM 0.3</div>
+      </aside>
+    </div>
+
+    <footer class="foot">Copyright © 2026 세란의 알바일기. All rights reserved. · skin by ♡</footer>
+  </div>
+</div>
+
+<!-- 블로그 팝업창 -->
+<div class="modal-wrap" id="modal" hidden>
+  <div class="popup" role="dialog" aria-modal="true" aria-labelledby="popTitle" tabindex="-1">
+    <div class="popup-title">
+      <span id="popTitle"></span>
+      <button type="button" class="popup-x" data-action="close-modal" aria-label="닫기">×</button>
+    </div>
+    <div class="popup-body" id="popBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="script.js"></script>
+</body>
+</html>
