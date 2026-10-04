@@ -26,6 +26,7 @@
   --sticky:rgba(240,250,253,.94);
   --panel:rgba(247,253,255,.94);
   --panel-border:rgba(255,255,255,.8);
+  --sheet-bg:rgba(247,253,255,.98);   /* 시트는 뒤가 비치지 않게 거의 불투명 */
   --shadow-pop:0 12px 32px rgba(3,38,66,.26);
   --field:#fff;
   --field-border:rgba(13,79,124,.26);
@@ -100,6 +101,7 @@
   --sticky:#0c1f40;
   --panel:#10294f;
   --panel-border:#24467d;
+  --sheet-bg:#10294f;
   --shadow-pop:0 12px 32px rgba(0,0,0,.55);
   --field:#081732;
   --field-border:#28497e;
@@ -157,7 +159,7 @@
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
   :root,:root[data-theme=day]{
     --win-bg:#eaf6fb;--sidebar:#d9edf7;--main-bg:#fff;--bar-bg:#eaf6fb;
-    --panel:#f6fcfe;--soft:#e8f4f9;--stripe:#f1f9fc;--sticky:#fff;
+    --panel:#f6fcfe;--soft:#e8f4f9;--stripe:#f1f9fc;--sticky:#fff;--sheet-bg:#f6fcfe;
   }
 }
 *{box-sizing:border-box}
@@ -517,7 +519,7 @@ input:focus,select:focus{outline:3px solid var(--ring);border-color:var(--blue)}
 .sheet-wrap{position:absolute;inset:0;z-index:20;display:flex;justify-content:center;align-items:flex-start;background:var(--sheet-scrim);overflow:hidden}
 .sheet{
   width:min(500px,calc(100% - 24px));max-height:calc(100% - 14px);overflow-y:auto;
-  background:var(--panel);border:1px solid var(--panel-border);border-top:0;border-radius:0 0 12px 12px;
+  background:var(--sheet-bg);border:1px solid var(--panel-border);border-top:0;border-radius:0 0 12px 12px;
   box-shadow:var(--shadow-pop);
   animation:sheetIn .3s cubic-bezier(.2,.85,.25,1);
 }
@@ -601,6 +603,12 @@ input:focus,select:focus{outline:3px solid var(--ring);border-color:var(--blue)}
 .seg.small .seg-btn{min-height:26px;padding:0 12px;font-size:12px}
 .seg.waste{display:flex}
 .seg.waste .seg-btn{flex:1;padding:0 8px}
+.seg.cyc{display:flex}
+.seg.cyc .seg-btn{flex:1}
+.seg.wdays{display:flex;width:100%}
+.seg.wdays .seg-btn{flex:1;min-width:0;padding:0 4px}
+.nowrap{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.jbadge.on{background:rgba(27,111,176,.16);color:var(--saving)}
 .content > .seg,.card > .seg{margin:4px 0 10px}
 
 /* 달력 칸의 금액 */
@@ -741,9 +749,12 @@ input:focus,select:focus{outline:3px solid var(--ring);border-color:var(--blue)}
 .s-mid small{color:var(--gray2);font-size:11.5px}
 .s-track{display:block;height:7px;margin:4px 0 6px;border-radius:4px;background:var(--soft-2);overflow:hidden}
 .s-track i{display:block;height:100%;border-radius:4px;transition:width .3s}
-.s-bot{font-size:11.5px;color:var(--gray)}
-.s-bot .paid{color:var(--income);font-weight:600}
-.s-bot .unpaid{color:var(--gray2)}
+.s-bot{font-size:11.5px;color:var(--text2)}
+.s-bot small{color:var(--gray);font-weight:400}
+.s-next{display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+  margin-top:3px;font-size:11.5px;color:var(--gray)}
+.s-next .paid{color:var(--income);font-weight:600}
+.s-next .unpaid{color:var(--gray)}
 
 /* 그래프 */
 .charts{display:grid;grid-template-columns:1fr 200px;gap:18px;align-items:start}

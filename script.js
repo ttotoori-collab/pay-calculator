@@ -167,17 +167,33 @@ function normalize(d) {
   // ---- 저축 통장 ----
   const savings = Array.isArray(d.savings) ? d.savings
     .filter(v => v && v.id && v.name && DATE_RE.test(v.start) && DATE_RE.test(v.end))
-    .map(v => ({
-      id: String(v.id),
-      name: String(v.name).slice(0, 20),
-      bank: String(v.bank || '').slice(0, 20),
-      amount: Math.max(0, Math.round(Number(v.amount) || 0)),
-      payday: Math.min(31, Math.max(1, Math.round(Number(v.payday)) || 25)),
-      start: v.start, end: v.end,
-      goal: Math.max(0, Math.round(Number(v.goal) || 0)),   // 0이면 목표액 없음
-      color: safeColor(v.color),
-      closed: DATE_RE.test(v.closed) ? v.closed : null      // 해지한 날 (없으면 null)
-    })) : [];
+    .map(v => {
+      // 예전 통장에는 주기가 없어요 → '매달'로 (지금까지와 똑같이 동작)
+      const cycle = v.cycle === 'day' ? 'day' : v.cycle === 'week' ? 'week' : 'month';
+      const wd = Math.round(Number(v.weekday));
+      // 회차마다 그날만 바꾼 금액 { 'YYYY-MM-DD': 금액 }
+      const edits = {};
+      const src = v.edits && typeof v.edits === 'object' ? v.edits : {};
+      for (const k of Object.keys(src)) {
+        const n = Math.round(Number(src[k]));
+        if (DATE_RE.test(k) && n >= 0 && Number.isFinite(n)) edits[k] = n;
+      }
+      return {
+        id: String(v.id),
+        name: String(v.name).slice(0, 20),
+        bank: String(v.bank || '').slice(0, 20),
+        cycle,
+        amount: Math.max(0, Math.round(Number(v.amount) || 0)),
+        weekday: wd >= 0 && wd <= 6 ? wd : parseYmd(v.start).getDay(),   // 매주: 요일 (0=일)
+        step: Math.max(0, Math.round(Number(v.step) || 0)),              // 매주: 회차마다 늘릴 금액
+        payday: Math.min(31, Math.max(1, Math.round(Number(v.payday)) || 25)),
+        start: v.start, end: v.end,
+        goal: Math.max(0, Math.round(Number(v.goal) || 0)),   // 0이면 목표액 없음
+        color: safeColor(v.color),
+        closed: DATE_RE.test(v.closed) ? v.closed : null,     // 해지한 날 (없으면 null)
+        edits
+      };
+    }) : [];
   const savingIds = new Set(savings.map(v => v.id));
 
   const entries = Array.isArray(d.entries) ? d.entries
@@ -529,18 +545,121 @@ const monthKey = (y, m) => `${y}-${pad(m + 1)}`;
 /* 통장이 더 넣을 수 있는 마지막 날 — 만기일, 해지했으면 해지한 날 */
 const savingLastDay = v => (v.closed && v.closed < v.end) ? v.closed : v.end;
 
+/* ---- 납입 주기 (매일 · 매주 · 매달) ----
+   회차(1부터)와 날짜를 서로 바꿔 주는 함수들. 전부 그때그때 계산해요 */
+const DAY_MS = 86400000;
+const daysBetween = (a, b) => Math.round((parseYmd(b) - parseYmd(a)) / DAY_MS);
+/* 그 달 payday — 없는 날짜(31일 지정 + 30일까지인 달)면 말일로
+   m이 11을 넘거나 음수여도 해를 넘겨 제대로 잡아요 */
+function paydayIn(y, m, payday) {
+  const d = new Date(y, m, 1);
+  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  return ymd(d.getFullYear(), d.getMonth(), Math.min(payday, last));
+}
+
+/* 첫 납입일 */
+function savingFirstDay(v) {
+  const s = parseYmd(v.start);
+  if (v.cycle === 'day') return v.start;
+  if (v.cycle === 'week') {
+    const d = new Date(s);
+    d.setDate(d.getDate() + (((v.weekday - s.getDay()) % 7) + 7) % 7);   // 시작일 뒤 첫 그 요일
+    return keyOf(d);
+  }
+  const first = paydayIn(s.getFullYear(), s.getMonth(), v.payday);
+  if (first >= v.start) return first;
+  return paydayIn(s.getFullYear(), s.getMonth() + 1, v.payday);          // 이번 달은 이미 지났으면 다음 달
+}
+
+/* n번째(1부터) 납입일 */
+function savingNthDay(v, n) {
+  const f = parseYmd(savingFirstDay(v));
+  if (v.cycle === 'day') { f.setDate(f.getDate() + (n - 1)); return keyOf(f); }
+  if (v.cycle === 'week') { f.setDate(f.getDate() + (n - 1) * 7); return keyOf(f); }
+  return paydayIn(f.getFullYear(), f.getMonth() + (n - 1), v.payday);
+}
+
+/* 그 날짜가 몇 회차인지 (납입일이 아니면 0) */
+function savingNthOf(v, date) {
+  const f = savingFirstDay(v);
+  if (date < f) return 0;
+  if (v.cycle === 'day') return daysBetween(f, date) + 1;
+  if (v.cycle === 'week') {
+    const gap = daysBetween(f, date);
+    return gap % 7 === 0 ? gap / 7 + 1 : 0;
+  }
+  const a = parseYmd(f), b = parseYmd(date);
+  const n = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth()) + 1;
+  return savingNthDay(v, n) === date ? n : 0;
+}
+
+/* 그 날짜 이후(그날 포함) 첫 납입의 회차 */
+function savingNthFrom(v, date) {
+  const f = savingFirstDay(v);
+  if (date <= f) return 1;
+  const gap = daysBetween(f, date);
+  if (v.cycle === 'day') return gap + 1;
+  if (v.cycle === 'week') return Math.ceil(gap / 7) + 1;
+  const a = parseYmd(f), b = parseYmd(date);
+  let n = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth()) + 1;
+  if (savingNthDay(v, n) < date) n++;
+  return n;
+}
+
+/* 만기(해지)까지 모두 몇 번 넣나 */
+function savingCount(v) {
+  const first = savingFirstDay(v), last = savingLastDay(v);
+  if (last < first) return 0;
+  if (v.cycle === 'day') return daysBetween(first, last) + 1;
+  if (v.cycle === 'week') return Math.floor(daysBetween(first, last) / 7) + 1;
+  const a = parseYmd(first), b = parseYmd(last);
+  let n = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth()) + 1;
+  if (savingNthDay(v, n) > last) n--;
+  return Math.max(0, n);
+}
+
+/* n회차에 넣기로 한 금액 — 매주 "늘리기"를 반영 (그날만 바꾼 값은 savingAmountOf에서) */
+const savingBase = (v, n) => v.cycle === 'week' && v.step
+  ? Math.max(0, v.amount + v.step * (n - 1)) : v.amount;
+
+/* n회차에 실제로 넣는 금액 — 그날만 바꾼 값이 있으면 그 값 */
+function savingAmountOf(v, n, date) {
+  const d = date || savingNthDay(v, n);
+  const fix = v.edits ? v.edits[d] : undefined;
+  return fix === undefined ? savingBase(v, n) : fix;
+}
+
+/* 만기까지 넣을 총액 (매주 늘리기 · 바꾼 금액까지) */
+function savingPlanTotal(v) {
+  const c = savingCount(v);
+  if (c <= 0) return 0;
+  let total = v.cycle === 'week' && v.step
+    ? c * v.amount + v.step * (c * (c - 1) / 2)
+    : c * v.amount;
+  for (const d of Object.keys(v.edits || {})) {
+    const n = savingNthOf(v, d);
+    if (n >= 1 && n <= c) total += v.edits[d] - savingBase(v, n);
+  }
+  return total;
+}
+
 /* 납입일마다 자동으로 생기는 저축 기록 (저장하지 않고 그때그때 계산) */
 function autoSaveEntries(y, m) {
   const out = [];
-  const last = new Date(y, m + 1, 0).getDate();
+  const mStart = ymd(y, m, 1), mEnd = ymd(y, m, new Date(y, m + 1, 0).getDate());
   for (const v of state.savings) {
-    if (!v.amount) continue;
-    const date = ymd(y, m, Math.min(v.payday, last));     // 그 달에 없는 날짜면 말일로
-    if (date < v.start || date > savingLastDay(v)) continue;   // 시작 전·만기 후·해지 후는 안 넣어요
-    const id = `save:${v.id}:${date}`;
-    if (state.savingSkips.includes(id)) continue;
-    out.push({ id, date, type: 'save', amount: v.amount, savingId: v.id, auto: true,
-      memo: `${v.name} 자동 납입` });
+    const stop = savingLastDay(v);                  // 만기일, 해지했으면 해지한 날
+    if (stop < mStart || savingFirstDay(v) > mEnd) continue;
+    for (let n = savingNthFrom(v, mStart); ; n++) {
+      const date = savingNthDay(v, n);
+      if (date > mEnd || date > stop) break;
+      const amount = savingAmountOf(v, n, date);
+      const id = `save:${v.id}:${date}`;
+      if (!amount || state.savingSkips.includes(id)) continue;   // 0원이거나 건너뛴 회차는 빼고
+      out.push({ id, date, type: 'save', amount, savingId: v.id, auto: true, nth: n,
+        edited: !!(v.edits && v.edits[date] !== undefined),
+        memo: `${v.name} · ${n}회차` });
+    }
   }
   return out;
 }
@@ -612,11 +731,12 @@ function monthMoney(y, m) {
 function savingPaid(v) {
   let total = 0, times = 0;
   const stop = savingLastDay(v) < TODAY ? savingLastDay(v) : TODAY;
-  const a = parseYmd(v.start), b = parseYmd(stop);
-  for (let d = new Date(a.getFullYear(), a.getMonth(), 1); d <= b; d.setMonth(d.getMonth() + 1)) {
-    for (const e of autoSaveEntries(d.getFullYear(), d.getMonth())) {
-      if (e.savingId === v.id && e.date <= stop) { total += e.amount; times++; }
-    }
+  for (let n = 1; n <= 20000; n++) {                 // 회차를 바로 세요 (매일 적금도 빠르게)
+    const date = savingNthDay(v, n);
+    if (date > stop) break;
+    const amount = savingAmountOf(v, n, date);
+    if (!amount || state.savingSkips.includes(`save:${v.id}:${date}`)) continue;
+    total += amount; times++;
   }
   for (const e of state.entries) {
     if (e.type === 'save' && e.savingId === v.id && e.date <= TODAY) { total += e.amount; times++; }
@@ -644,7 +764,24 @@ function savingInfo(v) {
   const thisMonth = [...autoSaveEntries(ui.y, ui.m), ...state.entries.filter(e => e.type === 'save' && e.date.startsWith(mk))]
     .filter(e => e.savingId === v.id && e.date <= TODAY)
     .reduce((a, e) => a + e.amount, 0);
-  return { total, times, dday, status, statusDone, pct, thisMonth };
+  return { total, times, dday, status, statusDone, pct, thisMonth,
+    count: savingCount(v), plan: savingPlanTotal(v), next: savingNext(v) };
+}
+
+/* 다음에 넣을 날과 금액 — 건너뛴 회차·0원은 지나치고, 만기(해지) 뒤면 null */
+function savingNext(v) {
+  const stop = savingLastDay(v);
+  if (v.closed || stop < TODAY) return null;
+  const first = savingNthFrom(v, TODAY);
+  for (let n = Math.max(1, first); n <= first + 400; n++) {
+    const date = savingNthDay(v, n);
+    if (date > stop) return null;
+    if (date <= TODAY) continue;                       // 오늘까지는 "넣은 것"으로 세요
+    const amount = savingAmountOf(v, n, date);
+    if (!amount || state.savingSkips.includes(`save:${v.id}:${date}`)) continue;
+    return { date, amount, nth: n };
+  }
+  return null;
 }
 
 /* ---------- 달마다 예산 ---------- */
@@ -1086,7 +1223,8 @@ function renderSavings() {
 }
 
 function savingCard({ v, i }) {
-  const goalText = v.goal ? `목표 ${won(v.goal)}` : `${v.start.slice(2).replace(/-/g, '.')} ~ ${v.end.slice(2).replace(/-/g, '.')}`;
+  // 목표액이 없으면 만기까지 넣을 총액을 대신 보여줘요
+  const goalText = v.goal ? `목표 ${won(v.goal)}` : i.plan ? `만기까지 ${won(i.plan)}` : `${v.start.slice(2).replace(/-/g, '.')} ~ ${v.end.slice(2).replace(/-/g, '.')}`;
   const dday = i.status ? `<span class="s-badge ${v.closed ? 'off' : 'done'}">${i.status}</span>`
     : `<span class="s-badge">D-${i.dday}</span>`;
   return `<div class="save-card ${i.statusDone ? 'done' : ''}" role="button" tabindex="0" data-action="edit-saving" data-id="${esc(v.id)}">
@@ -1101,17 +1239,31 @@ function savingCard({ v, i }) {
     </div>
     <span class="s-track"><i style="width:${i.pct}%;background:${v.color}"></i></span>
     <div class="s-bot">
-      <span>매달 ${v.payday}일 · ${won(v.amount)} · ${i.times}번 넣음</span>
-      <span class="${i.thisMonth ? 'paid' : 'unpaid'}">${i.statusDone ? '' : i.thisMonth ? `이번 달 ${won(i.thisMonth)} ✓` : '이번 달 아직'}</span>
+      <span>${cycleText(v)}</span>
+      <span>${i.times}회차 / 전체 ${i.count}회</span>
+    </div>
+    <div class="s-next">
+      <span class="${i.thisMonth ? 'paid' : 'unpaid'}">${i.statusDone ? (v.closed ? '해지한 통장이에요' : '만기가 됐어요')
+        : i.thisMonth ? `이번 달 ${won(i.thisMonth)} ✓` : '이번 달 아직'}</span>
+      <span>${i.next ? `다음 ${shortDate(i.next.date)} · ${won(i.next.amount)}` : ''}</span>
     </div>
   </div>`;
 }
+
+/* "매일 1,000원" / "매주 수요일 1,000원 (+1,000원씩)" / "매달 25일 300,000원" */
+function cycleText(v) {
+  if (v.cycle === 'day') return `매일 ${won(v.amount)}`;
+  if (v.cycle === 'week') return `매주 ${WD_SUN[v.weekday]}요일 ${won(v.amount)}${v.step ? ` <small>+${won(v.step)}씩</small>` : ''}`;
+  return `매달 ${v.payday}일 ${won(v.amount)}`;
+}
+const shortDate = d => `${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일`;
 
 /* ---------- 통장 만들기 / 고치기 ---------- */
 let saveEdit = null;
 function openSavingSheet(id) {
   const v = id ? savingById(id) : null;
-  saveEdit = { id: v ? v.id : null, color: v ? v.color : nextTagColor() };
+  saveEdit = { id: v ? v.id : null, color: v ? v.color : nextTagColor(),
+    cycle: v ? v.cycle : 'month', weekday: v ? v.weekday : parseYmd(TODAY).getDay() };
   const today = TODAY;
   const inOneYear = (() => { const d = parseYmd(today); d.setFullYear(d.getFullYear() + 1); return keyOf(d); })();
   openSheet('saving', `
@@ -1121,19 +1273,35 @@ function openSavingSheet(id) {
         <input type="text" id="vName" maxlength="20" placeholder="예: 청년적금" value="${v ? esc(v.name) : ''}"></div>
       <div class="frow"><label for="vBank">은행</label>
         <input type="text" id="vBank" maxlength="20" placeholder="(선택) 예: 국민은행" value="${v ? esc(v.bank) : ''}"></div>
-      <div class="frow"><label for="vAmount">월 납입액</label>
+      <div class="frow wide"><span class="lbl">납입 주기</span>
+        <div class="seg small cyc" role="group" aria-label="매일 / 매주 / 매달">
+          <button type="button" class="seg-btn" id="cycDay" data-action="saving-cycle" data-cycle="day">매일</button>
+          <button type="button" class="seg-btn" id="cycWeek" data-action="saving-cycle" data-cycle="week">매주</button>
+          <button type="button" class="seg-btn" id="cycMonth" data-action="saving-cycle" data-cycle="month">매달</button>
+        </div></div>
+      <div class="frow"><label for="vAmount">납입액</label>
         <div class="fctl"><input type="number" id="vAmount" min="0" step="1" inputmode="numeric" style="width:130px;text-align:right"
           placeholder="300000" value="${v ? v.amount : ''}"> 원</div></div>
-      <div class="frow"><span class="lbl">납입일</span>
+      <div class="frow wide" id="wdayRow"><span class="lbl">무슨 요일에 넣나요?</span>
+        <div class="seg small wdays" role="radiogroup" aria-label="요일">
+          ${WD_MON.map(w => { const i = WD_SUN.indexOf(w); return `<button type="button" class="seg-btn" data-action="saving-weekday" data-wd="${i}" role="radio" aria-checked="false">${w}</button>`; }).join('')}
+        </div></div>
+      <div class="frow" id="stepRow"><label for="vStep">늘리기</label>
+        <div class="fctl">매주 <input type="number" id="vStep" min="0" step="1" inputmode="numeric" style="width:100px;text-align:right"
+          placeholder="0" value="${v && v.step ? v.step : ''}">원씩 더</div></div>
+      <div class="frow" id="paydayRow"><span class="lbl">납입일</span>
         <div class="fctl">매달 <input type="number" id="vPayday" min="1" max="31" step="1" inputmode="numeric" style="width:62px;text-align:right"
           aria-label="납입일" value="${v ? v.payday : 25}">일</div></div>
       <div class="frow"><label for="vStart">시작일</label>
         <input type="date" id="vStart" value="${v ? v.start : today}"></div>
       <div class="frow"><label for="vEnd">만기일</label>
-        <input type="date" id="vEnd" value="${v ? v.end : inOneYear}"></div>
+        <div class="fctl wrap"><input type="date" id="vEnd" value="${v ? v.end : inOneYear}">
+          <span class="nowrap">기간 <input type="number" id="vCount" min="1" max="3650" step="1" inputmode="numeric" style="width:66px;text-align:right"
+            aria-label="납입 횟수"><b id="vCountUnit">개월</b></span></div></div>
       <div class="frow"><label for="vGoal">목표액</label>
         <div class="fctl"><input type="number" id="vGoal" min="0" step="1" inputmode="numeric" style="width:130px;text-align:right"
           placeholder="(선택) 안 적으면 기간으로" value="${v && v.goal ? v.goal : ''}"> 원</div></div>
+      <p class="hint" id="planHint"></p>
       <div class="frow top"><span class="lbl">색</span>
         <div class="swatches" role="radiogroup" aria-label="색">
           ${TAGS.map(t => `<button type="button" class="sw ${t.color === saveEdit.color ? 'on' : ''}" style="background:${t.color}" data-action="pick-saving-color" data-color="${t.color}" role="radio" aria-checked="${t.color === saveEdit.color}" title="${t.name}" aria-label="${t.name}"></button>`).join('')}
@@ -1147,7 +1315,57 @@ function openSavingSheet(id) {
       <button type="button" class="mbtn" data-action="close-sheet">취소</button>
       <button type="submit" class="mbtn blue" form="savingForm">저장</button>
     </div>`);
+  refreshSavingForm(v ? savingCount(v) : null);
   setTimeout(() => { const n = $('#vName'); if (n && window.innerWidth > 760) n.focus(); }, 320);
+}
+
+/* 지금 입력칸 값으로 만든 "가짜 통장" — 횟수·총액을 미리 계산해 보려고 */
+function savingDraft() {
+  const start = $('#vStart').value, end = $('#vEnd').value;
+  return {
+    cycle: saveEdit.cycle,
+    amount: Math.max(0, Math.round(Number($('#vAmount').value) || 0)),
+    weekday: saveEdit.weekday,
+    step: Math.max(0, Math.round(Number($('#vStep').value) || 0)),
+    payday: Math.min(31, Math.max(1, Math.round(Number($('#vPayday').value)) || 25)),
+    start: DATE_RE.test(start) ? start : TODAY,
+    end: DATE_RE.test(end) ? end : TODAY,
+    closed: null, edits: {}
+  };
+}
+
+/* 주기에 맞게 입력칸을 보여주고, 기간 ↔ 만기일을 맞춰요
+   count를 주면 그 횟수에 맞춰 만기일을 다시 잡고, 안 주면 만기일에서 횟수를 읽어요 */
+function refreshSavingForm(count) {
+  const cyc = saveEdit.cycle;
+  ['day', 'week', 'month'].forEach(c =>
+    $(`#cyc${c[0].toUpperCase()}${c.slice(1)}`).classList.toggle('on', c === cyc));
+  $('#wdayRow').hidden = cyc !== 'week';
+  $('#stepRow').hidden = cyc !== 'week';
+  $('#paydayRow').hidden = cyc !== 'month';
+  $('#vAmount').setAttribute('aria-label', { day: '매일', week: '매주', month: '매달' }[cyc] + ' 납입액');
+  $('#vCountUnit').textContent = { day: '일', week: '주', month: '개월' }[cyc];
+  $$('#wdayRow .seg-btn').forEach(b => {
+    const on = Number(b.dataset.wd) === saveEdit.weekday;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+
+  const draft = savingDraft();
+  if (count === null || count === undefined) count = savingCount(draft);
+  count = Math.min(3650, Math.max(1, Math.round(count) || 1));
+  $('#vCount').value = count;
+  const end = savingNthDay(draft, count);          // 마지막 납입일 = 만기일
+  $('#vEnd').value = end;
+  draft.end = end;
+
+  const total = savingPlanTotal(draft);
+  const goal = Math.max(0, Math.round(Number($('#vGoal').value) || 0));
+  const unit = { day: '일', week: '주', month: '개월' }[cyc];
+  $('#planHint').innerHTML = total
+    ? `${savingFirstDay(draft).replace(/-/g, '.')}부터 ${count}${unit} 동안 <b>${count}번</b>,
+       만기까지 모두 <b>${won(total)}</b>을 넣어요.${goal ? '' : ' 목표액을 비우면 통장에 이 금액이 적혀요.'}`
+    : '납입액을 적어 주세요.';
 }
 
 function submitSaving() {
@@ -1155,16 +1373,20 @@ function submitSaving() {
   const amount = Math.round(Number($('#vAmount').value) || 0);
   const start = $('#vStart').value, end = $('#vEnd').value;
   if (!name) { toast('통장 이름을 적어 주세요.'); $('#vName').focus(); return; }
+  if (!amount) { toast('납입액을 적어 주세요.'); $('#vAmount').focus(); return; }
   if (!DATE_RE.test(start) || !DATE_RE.test(end)) { toast('시작일과 만기일을 골라 주세요.'); return; }
   if (end < start) { toast('만기일이 시작일보다 빨라요.'); $('#vEnd').focus(); return; }
   const data = {
-    name: name.slice(0, 20), bank: $('#vBank').value.trim().slice(0, 20), amount,
+    name: name.slice(0, 20), bank: $('#vBank').value.trim().slice(0, 20),
+    cycle: saveEdit.cycle, amount,
+    weekday: saveEdit.weekday,
+    step: saveEdit.cycle === 'week' ? Math.max(0, Math.round(Number($('#vStep').value) || 0)) : 0,
     payday: Math.min(31, Math.max(1, Math.round(Number($('#vPayday').value)) || 25)),
     start, end, goal: Math.max(0, Math.round(Number($('#vGoal').value) || 0)),
     color: safeColor(saveEdit.color)
   };
   if (saveEdit.id) Object.assign(savingById(saveEdit.id), data);
-  else state.savings.push({ id: uid(), ...data, closed: null });
+  else state.savings.push({ id: uid(), ...data, closed: null, edits: {} });
   save(); closeSheet(); renderAll();
   toast(`"${name}" 저장했어요.`);
 }
@@ -1750,14 +1972,16 @@ function renderMonList() {
     const canWaste = !e.auto && e.type === 'out';
     return `<div class="day-row ${e.id === mon.editId ? 'editing' : ''} ${e.wasted ? 'wasted' : ''}">
       <span class="cat-dot" style="background:${c.color}">${c.emoji}</span>
-      <span class="dr-main"><b>${esc(c.name)}</b>${e.auto ? '<span class="jbadge">자동</span>' : ''}
+      <span class="dr-main"><b>${esc(c.name)}</b>${e.auto ? '<span class="jbadge">자동</span>' : ''}${e.edited ? '<span class="jbadge on">금액 바꿈</span>' : ''}
         <span class="amt ${e.type}">${sign}${won(e.amount)}${e.wasted ? '<i class="wmark" title="안 써도 됐던 돈">💸</i>' : ''}</span>
         ${e.memo ? `<small>${esc(e.memo)}</small>` : ''}</span>
       <span class="dr-btns">${canWaste
         ? `<button type="button" class="wbtn ${e.wasted ? 'on' : ''}" data-action="toggle-wasted" data-id="${esc(e.id)}"
              aria-pressed="${e.wasted ? 'true' : 'false'}"
              title="${e.wasted ? '안 써도 됐던 돈 — 눌러서 꼭 필요로' : '눌러서 안 써도 됐음으로'}">💸</button>` : ''}${e.auto
-        ? `<button type="button" class="mbtn small" data-action="hide-auto" data-id="${esc(e.id)}" title="이번 달만 숨기기">숨기기</button>`
+        ? `${e.type === 'save' && v
+             ? `<button type="button" class="mbtn small" data-action="edit-auto-save" data-id="${esc(e.id)}" title="이 회차만 금액 바꾸기">금액</button>` : ''}
+           <button type="button" class="mbtn small" data-action="hide-auto" data-id="${esc(e.id)}" title="${e.type === 'save' ? '이 회차만 건너뛰기' : '이번 달만 숨기기'}">${e.type === 'save' ? '건너뛰기' : '숨기기'}</button>`
         : `<button type="button" class="mbtn small" data-action="edit-entry" data-id="${esc(e.id)}">수정</button>
            <button type="button" class="mbtn small danger" data-action="del-entry" data-id="${esc(e.id)}">삭제</button>`}
       </span></div>`;
@@ -1877,6 +2101,37 @@ function deleteEntry(id) {
   });
 }
 
+/* 자동 저축 납입의 금액을 그 회차만 바꾸기 — 바꾼 값만 통장에 저장해요 (v.edits) */
+function editAutoSave(id) {
+  const [, vid, date] = id.split(':');
+  const v = savingById(vid);
+  if (!v || !DATE_RE.test(date)) return;
+  const n = savingNthOf(v, date);
+  const now = savingAmountOf(v, n, date);
+  const asked = prompt(`${shortDate(date)} ${n}회차에 얼마를 넣을까요? (원)\n비워서 확인을 누르면 원래 금액(${won(savingBase(v, n))})으로 돌아가요.`,
+    String(now));
+  if (asked === null) return;
+  const before = v.edits[date];
+  if (!asked.trim()) {
+    if (before === undefined) return;
+    delete v.edits[date];
+  } else {
+    const amount = Math.max(0, Math.round(Number(asked.replace(/[^0-9.]/g, '')) || 0));
+    if (!amount) { toast('숫자로 적어 주세요.'); return; }
+    if (amount === before) return;
+    v.edits[date] = amount;
+  }
+  save(); renderMoneySheet(); renderAll();
+  toast(asked.trim() ? `${n}회차를 ${won(v.edits[date])}으로 바꿨어요.` : `${n}회차를 원래 금액으로 되돌렸어요.`, {
+    label: '실행 취소', ms: 5000,
+    fn: () => {
+      if (before === undefined) delete v.edits[date]; else v.edits[date] = before;
+      save(); renderMoneySheet(); renderAll();
+      toast('되돌렸어요.');
+    }
+  });
+}
+
 /* 자동 기록(알바비·저축·고정 지출)은 지우는 게 아니라 "이번 달만 건너뛰기" */
 const skipListOf = id => id.startsWith('save:') ? 'savingSkips' : id.startsWith('recur:') ? 'recurringSkips' : 'hiddenAuto';
 function hideAuto(id) {
@@ -1884,7 +2139,7 @@ function hideAuto(id) {
   if (state[key].includes(id)) return;
   state[key].push(id);
   save(); renderMoneySheet(); renderAll();
-  toast('이번 달은 건너뛰었어요.', {
+  toast(id.startsWith('save:') ? '이 회차는 건너뛰었어요.' : '이번 달은 건너뛰었어요.', {
     label: '실행 취소', ms: 5000,
     fn: () => {
       state[key] = state[key].filter(x => x !== id);
@@ -2715,6 +2970,7 @@ document.addEventListener('click', e => {
       break;
     }
     case 'show-wasted': openWasteSheet(); break;
+    case 'edit-auto-save': editAutoSave(id); break;
     case 'edit-entry': startEntryEdit(id); break;
     case 'del-entry': deleteEntry(id); break;
     case 'save-entry': saveEntry(); break;
@@ -2733,6 +2989,18 @@ document.addEventListener('click', e => {
     case 'edit-saving': openSavingSheet(id); break;
     case 'del-saving': deleteSaving(id); break;
     case 'toggle-closed': toggleClosed(id); break;
+    case 'saving-cycle': {
+      const c = ['day', 'week'].includes(t.dataset.cycle) ? t.dataset.cycle : 'month';
+      if (c === saveEdit.cycle) break;
+      saveEdit.cycle = c;
+      if (c === 'week') saveEdit.weekday = parseYmd($('#vStart').value || TODAY).getDay();
+      refreshSavingForm({ day: 31, week: 26, month: 12 }[c]);   // 주기마다 기본 기간
+      break;
+    }
+    case 'saving-weekday':
+      saveEdit.weekday = Math.min(6, Math.max(0, Number(t.dataset.wd) || 0));
+      refreshSavingForm(Number($('#vCount').value));
+      break;
     case 'pick-saving-color':
       saveEdit.color = t.dataset.color;
       $$('.sw').forEach(b => { const on = b.dataset.color === saveEdit.color; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
@@ -2827,6 +3095,12 @@ document.addEventListener('input', e => {
     else if (t.id === 'eCat') mon.categoryId = t.value;
     else if (t.id === 'eSaving') mon.savingId = t.value;
     else if (t.id === 'dayMemo') saveDayMemo(t.value);
+    return;
+  }
+  if (sheetKind === 'saving' && saveEdit) {
+    // 기간을 고치면 만기일을, 만기일을 고치면 기간을 다시 잡아요
+    if (t.id === 'vCount') refreshSavingForm(Number(t.value));
+    else if (['vEnd', 'vStart', 'vPayday', 'vAmount', 'vStep', 'vGoal'].includes(t.id)) refreshSavingForm();
     return;
   }
   if (sheetKind === 'day' && pop) {
