@@ -643,7 +643,7 @@ input:focus,select:focus{outline:3px solid var(--ring);border-color:var(--blue)}
 .emo.on{box-shadow:0 0 0 2px var(--panel),0 0 0 3.5px var(--blue)}
 
 /* ============================================
-   가계부 2단계 — 예산 · 적금 · 그래프
+   가계부 2단계 — 예산 · 저축 · 그래프
    ============================================ */
 .mv.save{color:var(--saving)}
 .money-sum td.save{color:var(--saving);font-weight:600}
@@ -671,7 +671,7 @@ input:focus,select:focus{outline:3px solid var(--ring);border-color:var(--blue)}
 .budget.over .b-track i{background:var(--over)}
 .budget.over .b-bot,.budget.over .b-num b{color:var(--over)}
 
-/* 적금 통장 */
+/* 저축 통장 */
 .save-total{
   margin:4px 0 14px;padding:12px 14px;border-radius:10px;
   background:var(--soft);border:1px solid var(--line);

@@ -4,7 +4,7 @@
    - 글꼴 같은 외부 파일: 저장해둔 걸 먼저 (cache-first)
    파일을 바꾸면 VERSION만 올려 주세요.
    ============================================ */
-const VERSION = 'wallet-v15';  // v15: 가계부 2단계 (적금·예산·고정지출·그래프)
+const VERSION = 'wallet-v16';  // v16: "적금"을 "저축"으로
 const APP_SHELL = [
   './',
   './index.html',

@@ -164,7 +164,7 @@ function normalize(d) {
   }
   const catOf = new Map(categories.map(c => [c.id, c]));
 
-  // ---- 적금 통장 ----
+  // ---- 저축 통장 ----
   const savings = Array.isArray(d.savings) ? d.savings
     .filter(v => v && v.id && v.name && DATE_RE.test(v.start) && DATE_RE.test(v.end))
     .map(v => ({
@@ -521,7 +521,7 @@ function autoPayEntries(y, m) {
   return out;
 }
 
-/* ---------- 적금 통장 ---------- */
+/* ---------- 저축 통장 ---------- */
 const savingById = id => state.savings.find(v => v.id === id);
 const monthKey = (y, m) => `${y}-${pad(m + 1)}`;
 /* 통장이 더 넣을 수 있는 마지막 날 — 만기일, 해지했으면 해지한 날 */
@@ -560,7 +560,7 @@ function autoRecurEntries(y, m) {
   return out;
 }
 
-/* 그 달 자동 기록 전부 (알바비 · 적금 · 고정 지출) */
+/* 그 달 자동 기록 전부 (알바비 · 저축 · 고정 지출) */
 const autoEntries = (y, m) => [...autoPayEntries(y, m), ...autoSaveEntries(y, m), ...autoRecurEntries(y, m)];
 
 /* 그날 기록 (자동 + 직접 쓴 것) */
@@ -730,7 +730,7 @@ function renderSidebar() {
     <button type="button" class="sb-item ${ui.app === 'money' ? 'on' : ''}" data-action="go-app" data-app="money" title="가계부">
       ${icon('book')}<span>Money</span><span class="sb-num">${mm.count ? walletShort(mm.left) : ''}</span>
     </button>
-    <button type="button" class="sb-item ${ui.app === 'save' ? 'on' : ''}" data-action="go-app" data-app="save" title="적금 통장">
+    <button type="button" class="sb-item ${ui.app === 'save' ? 'on' : ''}" data-action="go-app" data-app="save" title="저축 통장">
       ${icon('bank')}<span>Savings</span><span class="sb-num">${savedTotal ? walletShort(savedTotal) : ''}</span>
     </button>
     <div class="sb-sec">iCloud</div>
@@ -828,7 +828,7 @@ function appTabs() {
   const tab = (id, label) =>
     `<button type="button" class="seg-btn ${ui.app === id ? 'on' : ''}" data-action="go-app" data-app="${id}"
       aria-pressed="${ui.app === id}">${label}</button>`;
-  return `<div class="seg" role="group" aria-label="화면 전환">${tab('work', '알바')}${tab('money', '가계부')}${tab('save', '적금')}</div>`;
+  return `<div class="seg" role="group" aria-label="화면 전환">${tab('work', '알바')}${tab('money', '가계부')}${tab('save', '저축')}</div>`;
 }
 
 function renderContent() {
@@ -994,7 +994,7 @@ function moneySummary(mm) {
 }
 
 /* ============================================
-   적금 통장 화면
+   저축 통장 화면
    ============================================ */
 function renderSavings() {
   const list = state.savings;
@@ -1004,7 +1004,7 @@ function renderSavings() {
   if (!list.length) {
     content.innerHTML = `${appTabs()}<div class="empty">
       <div class="big">🏦</div>
-      <p>아직 적금 통장이 없어요.<br>통장을 만들면 납입일마다 자동으로 기록돼요.</p>
+      <p>아직 저축 통장이 없어요.<br>통장을 만들면 납입일마다 자동으로 기록돼요.</p>
       <button type="button" class="mbtn blue" data-action="add-saving">통장 만들기</button>
     </div>`;
     return;
@@ -1014,7 +1014,7 @@ function renderSavings() {
       <span>모은 돈 전부</span><b>${won(total)}</b>
       <small>${infos.filter(x => !x.v.closed).length}개 통장 · 해지한 통장은 빼고</small>
     </div>
-    <div class="sec-title">적금 통장 <small>${list.length}개</small>
+    <div class="sec-title">저축 통장 <small>${list.length}개</small>
       <button type="button" class="mbtn small push" data-action="add-saving">+ 통장 만들기</button></div>
     <div class="save-list">${infos.map(savingCard).join('')}</div>
     <p class="note">납입일마다 "저축" 기록이 자동으로 생겨요. 통장을 눌러 고치거나, 날짜 칸에서 "건너뛰기"를 할 수 있어요.</p>`;
@@ -1050,7 +1050,7 @@ function openSavingSheet(id) {
   const today = TODAY;
   const inOneYear = (() => { const d = parseYmd(today); d.setFullYear(d.getFullYear() + 1); return keyOf(d); })();
   openSheet('saving', `
-    <div class="sheet-head" id="sheetTitle">${v ? '통장 수정' : '새 적금 통장'}</div>
+    <div class="sheet-head" id="sheetTitle">${v ? '통장 수정' : '새 저축 통장'}</div>
     <form class="sheet-body" id="savingForm" autocomplete="off">
       <div class="frow"><label for="vName">이름</label>
         <input type="text" id="vName" maxlength="20" placeholder="예: 청년적금" value="${v ? esc(v.name) : ''}"></div>
@@ -1755,7 +1755,7 @@ function saveEntry() {
   const data = { date: mon.date, type: mon.type, amount, memo: $('#eMemo').value.trim().slice(0, 60) };
   if (mon.type === 'save') {
     data.savingId = $('#eSaving').value || null;
-    if (!data.savingId) { toast('먼저 적금 통장을 만들어 주세요.'); return; }
+    if (!data.savingId) { toast('먼저 저축 통장을 만들어 주세요.'); return; }
   } else {
     data.categoryId = $('#eCat').value || FALLBACK_CAT[mon.type];
   }
@@ -1794,7 +1794,7 @@ function deleteEntry(id) {
   });
 }
 
-/* 자동 기록(알바비·적금·고정 지출)은 지우는 게 아니라 "이번 달만 건너뛰기" */
+/* 자동 기록(알바비·저축·고정 지출)은 지우는 게 아니라 "이번 달만 건너뛰기" */
 const skipListOf = id => id.startsWith('save:') ? 'savingSkips' : id.startsWith('recur:') ? 'recurringSkips' : 'hiddenAuto';
 function hideAuto(id) {
   const key = skipListOf(id);
@@ -2627,7 +2627,7 @@ document.addEventListener('click', e => {
     case 'edit-recur': openRecurEditSheet(id); break;
     case 'del-recur': deleteRecur(id); break;
     case 'back-to-recur': openRecurSheet(); break;
-    /* 적금 */
+    /* 저축 */
     case 'add-saving': closePanels(); openSavingSheet(); break;
     case 'edit-saving': openSavingSheet(id); break;
     case 'del-saving': deleteSaving(id); break;

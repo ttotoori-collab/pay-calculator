@@ -39,7 +39,7 @@
   - `dayMemos`: `{ 'YYYY-MM-DD': '그날 메모' }` (빈 글은 저장하지 않음)
   - `categories`: `{ id, name, emoji, color, type:'in'|'out' }` — 기본 목록은 `CATS`
   - `hiddenAuto`: 숨긴 자동 알바비 id 목록 (`auto:<jobId>:<날짜>`)
-- **적금·예산·고정 지출** (2단계)
+- **저축·예산·고정 지출** (2단계)
   - `savings`: `{ id, name, bank, amount(월 납입액), payday, start, end(만기일), goal(0이면 없음), color, closed(해지한 날|null) }`
   - `savingSkips` / `recurringSkips` / `hiddenAuto`: 건너뛴 자동 기록 id 목록
   - `budgets`: `{ 'YYYY-MM': 금액 }` — 달마다 따로
@@ -105,13 +105,13 @@
   - 지울 수는 없고 "이번 달만 숨기기"(`hiddenAuto`), 5초 안에 실행 취소 가능
 - 새 색은 CSS 변수로만: `--income` · `--expense` · `--saving` · `--near` · `--over` · `--seg-bg` · `--seg-on`
 
-### 가계부 2단계 — 적금 · 예산 · 고정 지출 · 그래프
-- 화면은 셋: `ui.app` = `'work'` | `'money'` | `'save'`. 세그먼트 [알바 | 가계부 | 적금] + 사이드바 Money·Savings
-- **자동 기록은 셋 다 저장하지 않고 그때그때 계산**해요 (`autoEntries()` = 알바비 + 적금 + 고정 지출)
+### 가계부 2단계 — 저축 · 예산 · 고정 지출 · 그래프
+- 화면은 셋: `ui.app` = `'work'` | `'money'` | `'save'`. 세그먼트 [알바 | 가계부 | 저축] + 사이드바 Money·Savings
+- **자동 기록은 셋 다 저장하지 않고 그때그때 계산**해요 (`autoEntries()` = 알바비 + 저축 + 고정 지출)
   - 각각 `autoPayEntries()` · `autoSaveEntries()` · `autoRecurEntries()`
   - 모두 "이번 달만 건너뛰기"만 되고 지울 수는 없어요. 건너뛴 id는 종류별 목록에 저장 (`skipListOf()`)
   - 그 달에 없는 날짜(31일 지정 + 30일까지인 달)면 **말일**로
-- **적금 통장**(`renderSavings()`)
+- **저축 통장**(`renderSavings()`)
   - 카드: 모인 돈 · 진행률 막대 · 만기 D-day · 이번 달 납입 여부. 맨 위에 전체 합계
   - 진행률은 **목표액이 있으면 금액 기준, 없으면 시작~만기 기간 기준**
   - `savingPaid()`는 **오늘까지** 넣은 것만 셈 (달력·월 요약은 앞으로 나갈 돈까지 보여주지만 통장 카드는 실제로 넣은 것만)
