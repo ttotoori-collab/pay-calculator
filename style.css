@@ -62,6 +62,7 @@
   --saving:#1b6fb0;
   --over:#c23b3b;
   --near:#b4660a;
+  --waste:#8e3b94;
   --seg-bg:rgba(13,79,124,.09);
   --seg-on:#fff;
   --ring:rgba(27,143,176,.3);
@@ -110,7 +111,7 @@
   --text2:#cfe3ff;
   --title:#e4f0ff;
   --total:#7cf7ff;
-  --gray:#6f8bb5;
+  --gray:#7f9ac4;
   --gray2:#5c7aa8;
 
   --line:#1a3563;
@@ -132,6 +133,7 @@
   --saving:#7cc4ff;
   --over:#ff8a8a;
   --near:#ffc879;
+  --waste:#f3a8ff;
   --seg-bg:rgba(124,247,255,.1);
   --seg-on:#27456f;
   --ring:rgba(124,247,255,.35);
@@ -531,6 +533,8 @@ input:focus,select:focus{outline:3px solid var(--ring);border-color:var(--blue)}
 .frow{display:grid;grid-template-columns:52px 1fr;align-items:center;gap:10px;margin:9px 0}
 .frow > label,.frow > .lbl{text-align:right;color:var(--text2);font-size:12.5px}
 .frow.top{align-items:start}
+.frow.wide{grid-template-columns:1fr;gap:5px}
+.frow.wide > label,.frow.wide > .lbl{text-align:left}
 .frow.top > .lbl{padding-top:4px}
 .fctl{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
 .col{display:flex;flex-direction:column;align-items:flex-start;gap:6px}
@@ -595,6 +599,8 @@ input:focus,select:focus{outline:3px solid var(--ring);border-color:var(--blue)}
 .seg-btn.on{background:var(--seg-on);color:var(--title);font-weight:600;box-shadow:0 .5px 2px rgba(0,0,0,.14)}
 @media (hover:hover){.seg-btn:not(.on):hover{color:var(--title)}}
 .seg.small .seg-btn{min-height:26px;padding:0 12px;font-size:12px}
+.seg.waste{display:flex}
+.seg.waste .seg-btn{flex:1;padding:0 8px}
 .content > .seg,.card > .seg{margin:4px 0 10px}
 
 /* 달력 칸의 금액 */
@@ -604,12 +610,14 @@ input:focus,select:focus{outline:3px solid var(--ring);border-color:var(--blue)}
 .mv.in{color:var(--income)}
 .mv.out{color:var(--expense)}
 .mv.memo{color:var(--gray2);font-weight:400}
+.mv .wdot{font-style:normal;font-size:9px;margin-left:2px;vertical-align:1.5px}
 
 /* 월 요약 */
 .money-sum td{font-size:13px}
 .money-sum td.in{color:var(--income);font-weight:600}
 .money-sum td.out{color:var(--expense);font-weight:600}
 .grand b.minus{color:var(--expense)}
+.grand b.waste{color:var(--waste)}
 .top-cats{display:flex;flex-direction:column;gap:7px;margin-top:4px}
 .top-row{display:grid;grid-template-columns:minmax(84px,auto) 1fr minmax(96px,auto);align-items:center;gap:10px;font-size:12.5px}
 .top-name{display:flex;align-items:center;gap:6px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -648,6 +656,19 @@ input:focus,select:focus{outline:3px solid var(--ring);border-color:var(--blue)}
 .mv.save{color:var(--saving)}
 .money-sum td.save{color:var(--saving);font-weight:600}
 .day-row .amt.save{color:var(--saving)}
+
+/* 낭비(안 써도 됐던 돈) 표시 — 글자는 살짝 흐리게, 금액 옆에 작은 💸 */
+.day-row.wasted .dr-main b{opacity:.7}
+.day-row .amt .wmark{font-style:normal;font-size:10.5px;margin-left:3px;vertical-align:1px}
+.day-row.wasted .amt.out{color:var(--waste)}
+.wbtn{
+  width:28px;height:26px;padding:0;flex:none;
+  border:1px solid transparent;border-radius:6px;background:transparent;
+  font-size:13px;line-height:1;opacity:.4;filter:grayscale(1);
+}
+@media (hover:hover){.wbtn:hover{opacity:.85;filter:none;background:var(--soft)}}
+.wbtn.on{opacity:1;filter:none;background:var(--soft-2);border-color:var(--waste)}
+.wbtn:focus-visible{outline:3px solid var(--ring);outline-offset:1px}
 .grand span small{color:var(--gray2);font-weight:400;margin-left:4px}
 
 /* 이번 달 예산 막대 */
@@ -665,11 +686,32 @@ input:focus,select:focus{outline:3px solid var(--ring);border-color:var(--blue)}
 .b-num b{font-size:14px;color:var(--title)}
 .b-track{display:block;height:9px;margin:7px 0 6px;border-radius:5px;background:var(--soft-2);overflow:hidden}
 .b-track i{display:block;height:100%;border-radius:5px;background:var(--income);transition:width .3s}
-.b-bot{font-size:11.5px;color:var(--gray)}
+.b-bot{font-size:11.5px;color:var(--text2)}
 .budget.warn .b-track i{background:var(--near)}
 .budget.warn .b-bot{color:var(--near)}
 .budget.over .b-track i{background:var(--over)}
 .budget.over .b-bot,.budget.over .b-num b{color:var(--over)}
+.b-waste{margin-top:6px;padding-top:6px;border-top:1px dashed var(--faint);font-size:11.5px;color:var(--waste)}
+
+/* 이번 달 낭비 줄 */
+.waste-row{
+  display:block;width:100%;margin-top:10px;padding:9px 12px 10px;text-align:left;
+  border:1px solid var(--line);border-radius:10px;background:var(--soft);color:inherit;font:inherit;
+}
+@media (hover:hover){.waste-row:hover{border-color:var(--waste)}}
+.waste-row.none{opacity:.75}
+.w-top,.w-bot{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.w-label{font-size:12.5px;font-weight:600;color:var(--text2)}
+.w-top b{font-size:16px;font-weight:700;color:var(--waste);font-variant-numeric:tabular-nums}
+.waste-row.none .w-top b{font-size:13px;font-weight:600;color:var(--gray)}
+.w-bot{margin-top:3px;font-size:11.5px;color:var(--text2)}
+.w-cats{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.w-chip{
+  display:inline-flex;align-items:center;gap:5px;padding:2px 9px 2px 3px;
+  border-radius:999px;background:var(--soft-2);
+  font-size:11.5px;color:var(--text2);white-space:nowrap;font-variant-numeric:tabular-nums;
+}
+.w-chip .cat-dot{width:18px;height:18px;font-size:10px}
 
 /* 저축 통장 */
 .save-total{
@@ -862,6 +904,8 @@ input:focus,select:focus{outline:3px solid var(--ring);border-color:var(--blue)}
   .s-bot{font-size:11px;gap:6px}
   .seg-btn{padding:0 12px}
   .b-num b{font-size:13px}
+  .w-top b{font-size:15px}
+  .w-bot{flex-wrap:wrap;gap:4px}
 }
 
 /* ============================================

@@ -193,6 +193,8 @@ function normalize(d) {
       if (type === 'save') out.savingId = savingIds.has(String(e.savingId)) ? String(e.savingId) : null;
       // 카테고리가 지워졌거나 종류가 안 맞으면 그 종류의 '기타'로
       else out.categoryId = cat && cat.type === type ? cat.id : FALLBACK_CAT[type];
+      // 낭비 표시는 지출만. 예전 데이터에 없으면 false (꼭 필요했던 지출)
+      if (type === 'out') out.wasted = e.wasted === true;
       return out;
     })
     // 통장이 사라진 저축 기록은 버려요 (어디에 넣은 돈인지 알 수 없어서)
@@ -574,25 +576,36 @@ function entriesOn(date) {
 function monthMoney(y, m) {
   const pre = monthKey(y, m);
   const list = [...autoEntries(y, m), ...state.entries.filter(e => e.date.startsWith(pre))];
-  let income = 0, expense = 0, saved = 0;
+  let income = 0, expense = 0, saved = 0, wasted = 0;
   const byCat = new Map();
+  const byWaste = new Map();
   const byDay = new Map();
+  const wastedList = [];
   for (const e of list) {
     if (e.type === 'in') income += e.amount;
     else if (e.type === 'save') saved += e.amount;
     else {
       expense += e.amount;
       byCat.set(e.categoryId, (byCat.get(e.categoryId) || 0) + e.amount);
+      if (e.wasted) {
+        wasted += e.amount;
+        wastedList.push(e);
+        byWaste.set(e.categoryId, (byWaste.get(e.categoryId) || 0) + e.amount);
+      }
     }
-    const d = byDay.get(e.date) || { in: 0, out: 0, save: 0 };
+    const d = byDay.get(e.date) || { in: 0, out: 0, save: 0, waste: 0 };
     d[e.type] += e.amount;
+    if (e.type === 'out' && e.wasted) d.waste += e.amount;
     byDay.set(e.date, d);
   }
-  const cats = [...byCat.entries()]
+  const sortCats = mp => [...mp.entries()]
     .map(([id, sum]) => ({ cat: catSafe(id, 'out'), sum }))
     .sort((a, b) => b.sum - a.sum);
+  const cats = sortCats(byCat);
   return { list, income, expense, saved, left: income - expense - saved,
-    top: cats.slice(0, 3), cats, byDay, count: list.length };
+    top: cats.slice(0, 3), cats, byDay, count: list.length,
+    wasted, wastedList: wastedList.sort((a, b) => a.date.localeCompare(b.date)),
+    wasteTop: sortCats(byWaste).slice(0, 3) };
 }
 
 /* 통장에 지금까지 모인 돈 — 오늘까지의 자동 납입 + 직접 넣은 돈 */
@@ -943,6 +956,7 @@ function budgetBar(y, m, mm) {
       <span>${leftOver >= 0 ? `${won(leftOver)} 남음` : `${won(-leftOver)} 넘었어요`}</span>
       <span>${perDay ? `하루 ${won(perDay)}씩 쓸 수 있어요` : daysLeft > 0 ? '' : '지난 달'}</span>
     </div>
+    ${mm.wasted ? `<div class="b-waste">💸 낭비만 안 했으면 ${won(leftOver + mm.wasted)} 남았어요</div>` : ''}
   </button>`;
 }
 
@@ -958,7 +972,10 @@ function moneyGrid(y, m, mm) {
     let evs = '';
     let label = '';
     if (sum && sum.in) { evs += `<div class="mv in">+${moneyShort(sum.in)}</div>`; label += `, 수입 ${won(sum.in)}`; }
-    if (sum && sum.out) { evs += `<div class="mv out">−${moneyShort(sum.out)}</div>`; label += `, 지출 ${won(sum.out)}`; }
+    if (sum && sum.out) {
+      evs += `<div class="mv out">−${moneyShort(sum.out)}${sum.waste ? '<i class="wdot">💸</i>' : ''}</div>`;
+      label += `, 지출 ${won(sum.out)}${sum.waste ? `, 낭비 ${won(sum.waste)}` : ''}`;
+    }
     if (sum && sum.save) { evs += `<div class="mv save">−${moneyShort(sum.save)}</div>`; label += `, 저축 ${won(sum.save)}`; }
     if (state.dayMemos[key]) evs += '<div class="mv memo" title="메모 있음">✎</div>';
     h += `<div class="${cls}" role="button" tabindex="0" data-action="open-money-day" data-date="${key}"
@@ -990,7 +1007,55 @@ function moneySummary(mm) {
         ${mm.saved ? `<tr><td data-label="저축">저축</td><td class="r save">−${won(mm.saved)}</td></tr>` : ''}
       </tbody></table>
     <div class="grand"><span>${ui.m + 1}월 남은 돈 ${mm.saved ? '<small>수입 − 지출 − 저축</small>' : ''}</span><b class="${mm.left < 0 ? 'minus' : ''}">${won(mm.left)}</b></div>
+    ${wasteRow(mm)}
     ${bar}`;
+}
+
+/* ---------- 이번 달 낭비 줄 (누르면 낭비 목록 시트) ---------- */
+function wasteRow(mm) {
+  if (!mm.expense) return '';
+  const prev = monthMoney(ui.m === 0 ? ui.y - 1 : ui.y, (ui.m + 11) % 12).wasted;
+  const diff = mm.wasted - prev;
+  const delta = !mm.wasted && !prev ? ''
+    : diff > 0 ? `지난달보다 +${won(diff)}`
+      : diff < 0 ? `지난달보다 −${won(-diff)}` : '지난달과 같아요';
+  if (!mm.wasted) {
+    return `<div class="waste-row none"><div class="w-top">
+      <span class="w-label">💸 이번 달 낭비</span><b>없어요</b></div>
+      ${delta ? `<div class="w-bot"><span></span><span>${delta}</span></div>` : ''}</div>`;
+  }
+  const pct = Math.round(mm.wasted / mm.expense * 100);
+  return `<button type="button" class="waste-row" data-action="show-wasted" title="눌러서 낭비 목록 보기">
+    <div class="w-top"><span class="w-label">💸 이번 달 낭비</span><b>${won(mm.wasted)}</b></div>
+    <div class="w-bot"><span>전체 지출의 ${pct}%</span><span>${delta}</span></div>
+    ${mm.wasteTop.length ? `<div class="w-cats">${mm.wasteTop.map(t => `
+      <span class="w-chip"><span class="cat-dot" style="background:${t.cat.color}">${t.cat.emoji}</span>${esc(t.cat.name)} ${won(t.sum)}</span>`).join('')}</div>` : ''}
+  </button>`;
+}
+
+/* ---------- 낭비 목록 시트 ---------- */
+function openWasteSheet() {
+  const mm = monthMoney(ui.y, ui.m);
+  const rows = mm.wastedList.map(e => {
+    const c = catSafe(e.categoryId, 'out');
+    const d = Number(e.date.slice(8, 10));
+    return `<div class="day-row" role="button" tabindex="0" data-action="open-money-day" data-date="${e.date}">
+      <span class="cat-dot" style="background:${c.color}">${c.emoji}</span>
+      <span class="dr-main"><b>${d}일 ${esc(c.name)}</b>
+        <span class="amt out">−${won(e.amount)}</span>
+        ${e.memo ? `<small>${esc(e.memo)}</small>` : ''}</span></div>`;
+  }).join('');
+  openSheet('waste', `
+    <div class="sheet-head" id="sheetTitle">${ui.m + 1}월 낭비한 돈</div>
+    <div class="sheet-body">
+      <div class="grand"><span>안 써도 됐던 돈 <small>${mm.expense ? `전체 지출의 ${Math.round(mm.wasted / mm.expense * 100)}%` : ''}</small></span><b class="minus waste">${won(mm.wasted)}</b></div>
+      <div class="day-list">${rows || '<div class="day-empty">이번 달은 낭비한 기록이 없어요.</div>'}</div>
+      <p class="hint" style="margin-left:0">날짜를 누르면 그날 기록으로 넘어가요. 목록에서 💸를 눌러 표시를 바꿀 수 있어요.</p>
+    </div>
+    <div class="sheet-foot">
+      <span class="spacer"></span>
+      <button type="button" class="mbtn blue" data-action="close-sheet">닫기</button>
+    </div>`);
 }
 
 /* ============================================
@@ -1613,7 +1678,7 @@ let mon = null;   // money day 상태
 
 function openMoneyDay(date, editId) {
   const dt = parseYmd(date);
-  mon = { date, editId: null, type: 'out', amount: '', categoryId: FALLBACK_CAT.out, savingId: null, memo: '', formOpen: false };
+  mon = { date, editId: null, type: 'out', amount: '', categoryId: FALLBACK_CAT.out, savingId: null, memo: '', wasted: false, formOpen: false };
   mon.formOpen = !!editId || !entriesOn(date).length;
   resetMoneyForm();
   openSheet('money', `
@@ -1637,6 +1702,11 @@ function openMoneyDay(date, editId) {
           <select id="eCat"></select></div>
         <div class="frow" id="savRow" hidden><label for="eSaving">통장</label>
           <select id="eSaving"></select></div>
+        <div class="frow wide" id="wasteRow"><span class="lbl">이 지출, 꼭 필요했나요?</span>
+          <div class="seg small waste" role="group" aria-label="꼭 필요 / 안 써도 됐음">
+            <button type="button" class="seg-btn" id="wasteNo" data-action="entry-waste" data-w="0">꼭 필요 ✓</button>
+            <button type="button" class="seg-btn" id="wasteYes" data-action="entry-waste" data-w="1">안 써도 됐음 💸</button>
+          </div></div>
         <div class="frow"><label for="eMemo">메모</label>
           <input type="text" id="eMemo" maxlength="60" placeholder="(선택) 어디에 썼는지" style="flex:1;min-width:0"></div>
       </div>
@@ -1676,12 +1746,17 @@ function renderMonList() {
     const v = e.type === 'save' ? savingById(e.savingId) : null;
     const c = v ? { name: v.name, emoji: '🏦', color: v.color } : catSafe(e.categoryId, e.type);
     const sign = e.type === 'in' ? '+' : '−';
-    return `<div class="day-row ${e.id === mon.editId ? 'editing' : ''}">
+    // 💸 표시는 직접 쓴 지출에만 (수입·저축·자동 기록은 없음)
+    const canWaste = !e.auto && e.type === 'out';
+    return `<div class="day-row ${e.id === mon.editId ? 'editing' : ''} ${e.wasted ? 'wasted' : ''}">
       <span class="cat-dot" style="background:${c.color}">${c.emoji}</span>
       <span class="dr-main"><b>${esc(c.name)}</b>${e.auto ? '<span class="jbadge">자동</span>' : ''}
-        <span class="amt ${e.type}">${sign}${won(e.amount)}</span>
+        <span class="amt ${e.type}">${sign}${won(e.amount)}${e.wasted ? '<i class="wmark" title="안 써도 됐던 돈">💸</i>' : ''}</span>
         ${e.memo ? `<small>${esc(e.memo)}</small>` : ''}</span>
-      <span class="dr-btns">${e.auto
+      <span class="dr-btns">${canWaste
+        ? `<button type="button" class="wbtn ${e.wasted ? 'on' : ''}" data-action="toggle-wasted" data-id="${esc(e.id)}"
+             aria-pressed="${e.wasted ? 'true' : 'false'}"
+             title="${e.wasted ? '안 써도 됐던 돈 — 눌러서 꼭 필요로' : '눌러서 안 써도 됐음으로'}">💸</button>` : ''}${e.auto
         ? `<button type="button" class="mbtn small" data-action="hide-auto" data-id="${esc(e.id)}" title="이번 달만 숨기기">숨기기</button>`
         : `<button type="button" class="mbtn small" data-action="edit-entry" data-id="${esc(e.id)}">수정</button>
            <button type="button" class="mbtn small danger" data-action="del-entry" data-id="${esc(e.id)}">삭제</button>`}
@@ -1693,6 +1768,8 @@ function resetMoneyForm() {
   mon.editId = null;
   mon.amount = '';
   mon.memo = '';
+  mon.wasted = false;   // 기본은 "꼭 필요"
+
   if (mon.type === 'save') { const open = state.savings.filter(v => !v.closed); mon.savingId = open.length ? open[0].id : (state.savings[0] || {}).id || null; }
   else mon.categoryId = FALLBACK_CAT[mon.type];
 }
@@ -1709,6 +1786,10 @@ function refreshMoneyForm() {
   const saving = mon.type === 'save';
   $('#catRow').hidden = saving;
   $('#savRow').hidden = !saving;
+  // 낭비 표시는 지출에만
+  $('#wasteRow').hidden = mon.type !== 'out';
+  $('#wasteNo').classList.toggle('on', !mon.wasted);
+  $('#wasteYes').classList.toggle('on', !!mon.wasted);
   if (saving) {
     const open = state.savings.filter(v => !v.closed);
     const list = open.length ? open : state.savings;
@@ -1746,6 +1827,7 @@ function startEntryEdit(id) {
   if (!e) return;
   mon.editId = id; mon.formOpen = true;
   mon.type = e.type; mon.amount = String(e.amount); mon.categoryId = e.categoryId; mon.memo = e.memo;
+  mon.wasted = e.wasted === true;
   renderMoneySheet();
 }
 
@@ -1758,11 +1840,12 @@ function saveEntry() {
     if (!data.savingId) { toast('먼저 저축 통장을 만들어 주세요.'); return; }
   } else {
     data.categoryId = $('#eCat').value || FALLBACK_CAT[mon.type];
+    if (mon.type === 'out') data.wasted = !!mon.wasted;
   }
   if (mon.editId) {
     const e = state.entries.find(x => x.id === mon.editId);
     // 수입↔지출↔저축으로 바꿨을 수 있으니 예전 종류의 값은 지우고 새로 넣어요
-    if (e) { delete e.categoryId; delete e.savingId; Object.assign(e, data); }
+    if (e) { delete e.categoryId; delete e.savingId; delete e.wasted; Object.assign(e, data); }
     toast('수정했어요.');
   } else {
     state.entries.push({ id: uid(), ...data });
@@ -2614,6 +2697,24 @@ document.addEventListener('click', e => {
       renderMonFoot();
       break;
     }
+    case 'entry-waste': {
+      mon.wasted = t.dataset.w === '1';
+      refreshMoneyForm();
+      break;
+    }
+    /* 목록에서 💸 바로 켜고 끄기 (수정 창을 열지 않고) */
+    case 'toggle-wasted': {
+      const e = state.entries.find(x => x.id === id);
+      if (!e || e.type !== 'out') break;
+      e.wasted = !e.wasted;
+      if (mon && mon.editId === id) mon.wasted = e.wasted;
+      save();
+      renderMoneySheet();
+      renderAll();
+      toast(e.wasted ? '💸 안 써도 됐던 돈으로 표시했어요.' : '꼭 필요한 지출로 바꿨어요.');
+      break;
+    }
+    case 'show-wasted': openWasteSheet(); break;
     case 'edit-entry': startEntryEdit(id); break;
     case 'del-entry': deleteEntry(id); break;
     case 'save-entry': saveEntry(); break;

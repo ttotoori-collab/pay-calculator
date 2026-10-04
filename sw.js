@@ -4,7 +4,7 @@
    - 글꼴 같은 외부 파일: 저장해둔 걸 먼저 (cache-first)
    파일을 바꾸면 VERSION만 올려 주세요.
    ============================================ */
-const VERSION = 'wallet-v16';  // v16: "적금"을 "저축"으로
+const VERSION = 'wallet-v17';  // v17: 지출에 '꼭 필요했는지'(낭비) 표시
 const APP_SHELL = [
   './',
   './index.html',
