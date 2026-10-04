@@ -34,11 +34,17 @@
 - 새 필드를 추가할 때도 **기존 데이터가 깨지지 않게** normalize에 기본값을 넣을 것
 - `lastExport`: 백업 파일을 마지막으로 받은 때 (없으면 0)
 - **가계부** (전부 normalize에서 기본값을 채워요 — 예전 백업도 그대로 열려요)
-  - `entries`: `{ id, date:'YYYY-MM-DD', type:'in'|'out', amount, categoryId, memo }`
+  - `entries`: `{ id, date:'YYYY-MM-DD', type:'in'|'out'|'save', amount, memo }` + 지출·수입은 `categoryId`, 저축은 `savingId`
+    - 통장이 사라진 저축 기록은 normalize에서 버려요 (어디에 넣은 돈인지 알 수 없어서)
   - `dayMemos`: `{ 'YYYY-MM-DD': '그날 메모' }` (빈 글은 저장하지 않음)
   - `categories`: `{ id, name, emoji, color, type:'in'|'out' }` — 기본 목록은 `CATS`
   - `hiddenAuto`: 숨긴 자동 알바비 id 목록 (`auto:<jobId>:<날짜>`)
-- 마지막으로 본 화면은 localStorage **`wallet-tab`**(`work`|`money`)에 따로 저장 (근무 기록과 별개)
+- **적금·예산·고정 지출** (2단계)
+  - `savings`: `{ id, name, bank, amount(월 납입액), payday, start, end(만기일), goal(0이면 없음), color, closed(해지한 날|null) }`
+  - `savingSkips` / `recurringSkips` / `hiddenAuto`: 건너뛴 자동 기록 id 목록
+  - `budgets`: `{ 'YYYY-MM': 금액 }` — 달마다 따로
+  - `recurring`: `{ id, name, amount, day, categoryId, start:'YYYY-MM'|null, end }`
+- 마지막으로 본 화면은 localStorage **`wallet-tab`**(`work`|`money`|`save`)에 따로 저장 (근무 기록과 별개)
 - 백업: ⋯ 메뉴 → JSON 내보내기/불러오기/모두 지우기
 
 ### 기록 보호 (★ 실제로 사용자 기록이 사라진 적이 있어요 — 이 규칙을 지켜 주세요)
@@ -97,7 +103,29 @@
   - **저장하지 않고 그때그때 계산** — 근무를 고치면 바로 반영돼요. 목록에 "자동" 배지
   - 그 달에 없는 날짜(31일 지정 + 30일까지인 달)면 **말일**로
   - 지울 수는 없고 "이번 달만 숨기기"(`hiddenAuto`), 5초 안에 실행 취소 가능
-- 새 색은 CSS 변수로만: `--income` · `--expense` · `--seg-bg` · `--seg-on`
+- 새 색은 CSS 변수로만: `--income` · `--expense` · `--saving` · `--near` · `--over` · `--seg-bg` · `--seg-on`
+
+### 가계부 2단계 — 적금 · 예산 · 고정 지출 · 그래프
+- 화면은 셋: `ui.app` = `'work'` | `'money'` | `'save'`. 세그먼트 [알바 | 가계부 | 적금] + 사이드바 Money·Savings
+- **자동 기록은 셋 다 저장하지 않고 그때그때 계산**해요 (`autoEntries()` = 알바비 + 적금 + 고정 지출)
+  - 각각 `autoPayEntries()` · `autoSaveEntries()` · `autoRecurEntries()`
+  - 모두 "이번 달만 건너뛰기"만 되고 지울 수는 없어요. 건너뛴 id는 종류별 목록에 저장 (`skipListOf()`)
+  - 그 달에 없는 날짜(31일 지정 + 30일까지인 달)면 **말일**로
+- **적금 통장**(`renderSavings()`)
+  - 카드: 모인 돈 · 진행률 막대 · 만기 D-day · 이번 달 납입 여부. 맨 위에 전체 합계
+  - 진행률은 **목표액이 있으면 금액 기준, 없으면 시작~만기 기간 기준**
+  - `savingPaid()`는 **오늘까지** 넣은 것만 셈 (달력·월 요약은 앞으로 나갈 돈까지 보여주지만 통장 카드는 실제로 넣은 것만)
+  - 만기가 지나면 "만기", 해지하면 "해지" — **해지한 날 뒤로는 자동 납입이 안 생겨요** (`savingLastDay()`)
+- **월 예산**(`budgetBar()` · `budgetOf()`): 쓴 돈/예산 막대, 남은 금액, 하루에 쓸 수 있는 돈
+  - 80% 넘으면 주황(`.warn`), 넘치면 빨강(`.over`)
+  - 이번 달 값이 없으면 **가장 가까운 지난달 값**을 기본으로 보여줘요 (저장은 안 함 — `own:false`)
+  - 막대를 누르거나 ⋯ 메뉴에서 바꿔요
+- **매달 고정 지출**(`openRecurSheet()`): 이름·금액·날짜·카테고리·시작/끝. 그날 지출로 자동 기록
+- **그래프**(`moneyCharts()`): 외부 라이브러리 없이 **SVG**
+  - 최근 6개월 수입·지출·저축 막대 + 이번 달 카테고리별 지출 도넛
+  - **글자는 SVG 밖 HTML에 둬요** (viewBox로 확대되면 글자가 같이 커져서 깨지거든요)
+  - 색은 `fill="var(--income)"`처럼 CSS 변수로 → 낮/밤 자동
+  - 막대·조각을 누르면 `#chartInfo`에 금액이 떠요. 도넛은 **테두리(stroke) 위**가 눌리는 부분이에요
 
 ## 디자인: macOS Finder 창 + 바닷속 (낮/밤 모드)
 - 창 구조는 macOS Finder 그대로, 색만 "바닷속"으로 입혔어요. 레이아웃·기능은 모드와 상관없이 똑같아요
@@ -182,7 +210,7 @@
 - 글자 대비는 두 모드 모두 **4.5:1 이상**으로 맞춰 둠. 가장 흐린 `--gray2`는 주말 날짜·힌트처럼 정말 보조적인 곳에만 쓰기
 
 ## 고칠 때 꼭 지킬 것
-- 앱 파일(아이콘 포함)을 바꾸면 **`sw.js`의 `VERSION`을 올리기** (지금 `wallet-v14`). 새 파일이 생기면 `APP_SHELL`에도 추가
+- 앱 파일(아이콘 포함)을 바꾸면 **`sw.js`의 `VERSION`을 올리기** (지금 `wallet-v15`). 새 파일이 생기면 `APP_SHELL`에도 추가
 - 사용자 입력은 화면에 넣기 전에 `esc()`로 처리
 - 고친 뒤 확인: 계산 결과(위 예시), PC 화면, 휴대폰 폭(390px) 가로 스크롤 없음, 콘솔 오류 없음
 - service worker는 `file://`에서 동작하지 않으니 오프라인 확인은 `python3 -m http.server`로
