@@ -338,14 +338,6 @@ button{cursor:pointer}
 .sb-toggle{display:none}
 .tb-tools{display:flex;align-items:center;justify-content:flex-end;gap:16px}
 .tb-tools .tb-btn > .ic,.tb-tools .tb-btn > span:not(.mini) > .ic{width:20px;height:20px}
-.search{display:flex;align-items:center;gap:4px}
-.search input{
-  width:0;padding:0;border:0;opacity:0;transition:width .2s,opacity .2s;
-  height:26px;border-radius:6px;background:var(--soft);font-size:12.5px;
-}
-.search.open input{width:160px;opacity:1;padding:0 9px;border:1px solid var(--field-border)}
-.search input:focus{outline:3px solid var(--ring);border-color:var(--blue);background:var(--field)}
-
 .menu-anchor{position:relative}
 .menu{
   position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:200px;
@@ -659,9 +651,6 @@ input:focus,select:focus{outline:3px solid var(--ring);border-color:var(--blue)}
   .toolbar{padding:4px 10px 6px;padding-top:max(4px,env(safe-area-inset-top));gap:2px}
   .month-btn{font-size:18px;padding:0 8px}
   .tb-tools{justify-content:space-between;gap:4px}
-  .search.open{flex:1;justify-content:flex-end}
-  .search.open input{width:100%;flex:1}
-  .tb-tools.searching > :not(.search){display:none}
   .content{padding:2px 10px 24px}
   .card{padding:2px 6px 12px;border-radius:10px}
   .cell{min-height:58px;padding:4px 3px}

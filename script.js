@@ -34,7 +34,6 @@ const ICONS = {
   share: '<path d="M12 3.5v11M8.2 7.2L12 3.5l3.8 3.7"/><path d="M8 10.5H6.5A1.5 1.5 0 0 0 5 12v7a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19v-7a1.5 1.5 0 0 0-1.5-1.5H16"/>',
   tag: '<path d="M20.2 12.8l-7.4 7.4a1.6 1.6 0 0 1-2.3 0L3.8 13.5a1.6 1.6 0 0 1-.5-1.1V5a1.6 1.6 0 0 1 1.6-1.6h7.4a1.6 1.6 0 0 1 1.1.5l6.8 6.7a1.6 1.6 0 0 1 0 2.2z"/><circle cx="8.2" cy="8.2" r="1.3"/>',
   more: '<circle cx="12" cy="12" r="8.8"/><circle cx="8.2" cy="12" r=".7" fill="currentColor"/><circle cx="12" cy="12" r=".7" fill="currentColor"/><circle cx="15.8" cy="12" r=".7" fill="currentColor"/>',
-  search: '<circle cx="10.5" cy="10.5" r="6.3"/><path d="M15.3 15.3L20 20"/>',
   sidebar: '<rect x="3" y="4.5" width="18" height="15" rx="2.6"/><path d="M9.5 4.5v15M5.5 8.5h1.6M5.5 11h1.6"/>',
   calendar: '<rect x="3.5" y="5" width="17" height="15" rx="2.6"/><path d="M3.5 9.6h17M8 3v4M16 3v4"/>',
   briefcase: '<rect x="3.5" y="7" width="17" height="12.5" rx="2.6"/><path d="M9 7V5.6A1.6 1.6 0 0 1 10.6 4h2.8A1.6 1.6 0 0 1 15 5.6V7M3.5 12.4h17"/>',
@@ -238,8 +237,6 @@ const ui = {
   mode: 'grid',          // grid(달력) | list(리스트)
   group: false,          // 알바별 묶어보기
   filter: null,          // 태그로 고른 알바 id
-  search: '',
-  searchOpen: false,
   sort: { key: 'date', dir: 1 },
   y: START.y, m: START.m
 };
@@ -408,7 +405,6 @@ const walletShort = n => n >= 1e6 ? `₩${Math.round(n / 1e4).toLocaleString('ko
 /* ---------- 사이드바 ---------- */
 function renderSidebar() {
   const c = monthCalc(ui.y, ui.m);
-  const searching = !!ui.search.trim();
   const tagActive = ui.filter && ui.view === 'calendar';
   const fav = [
     ['calendar', 'calendar', 'Calendar', '달력'],
@@ -423,7 +419,7 @@ function renderSidebar() {
   $('#sbNav').innerHTML = `
     <div class="sb-sec">Favorites</div>
     ${fav.map(([v, ic, label, ko]) => `
-      <button type="button" class="sb-item ${ui.view === v && !tagActive && !searching ? 'on' : ''}" data-action="view" data-view="${v}" title="${ko}">
+      <button type="button" class="sb-item ${ui.view === v && !tagActive ? 'on' : ''}" data-action="view" data-view="${v}" title="${ko}">
         ${icon(ic)}<span>${label}</span>
       </button>`).join('')}
     <div class="sb-sec">iCloud</div>
@@ -435,7 +431,7 @@ function renderSidebar() {
     </button>
     <div class="sb-sec">Tags</div>
     ${tags || '<div class="sb-empty">알바를 등록하면 태그가 생겨요</div>'}
-    <button type="button" class="sb-item ${!ui.filter && ui.view === 'calendar' && !searching ? '' : ''}" data-action="filter" data-id="" title="전체 보기">
+    <button type="button" class="sb-item" data-action="filter" data-id="" title="전체 보기">
       ${icon('tags')}<span>All Tags…</span>
     </button>`;
 }
@@ -474,8 +470,6 @@ function renderToolbar() {
   const g = $('#groupBtn');
   g.classList.toggle('on', ui.group);
   g.setAttribute('aria-pressed', String(ui.group));
-  $('#search').classList.toggle('open', ui.searchOpen);
-  $('.tb-tools').classList.toggle('searching', ui.searchOpen);
   syncPanelButtons();
 }
 
@@ -484,7 +478,6 @@ function syncPanelButtons() {
   const set = (el, on) => { if (!el) return; el.classList.toggle('on', on); el.setAttribute('aria-expanded', String(on)); };
   set($('#tagBtn'), sheetKind === 'jobs' || (sheetKind === 'job' && !!jobEdit && !jobEdit.id));   // 알바 관리 패널
   set($('#menuBtn'), !$('#menu').hidden);                              // ⋯ 메뉴
-  set($('#searchBtn'), ui.searchOpen);                                 // 돋보기
   set($('#monthBtn'), ymOpen);                                         // 연도·월 고르기
   set($('#sbToggle'), $('#window').classList.contains('sb-open'));     // 모바일 사이드바
 }
@@ -495,7 +488,6 @@ function closePanels() {
   closeMenu();
   closeYm();
   closeSidebar();
-  if (ui.searchOpen) closeSearch();
 }
 
 /* ---------- 기록을 못 읽었을 때: 복구 화면 ---------- */
@@ -518,8 +510,7 @@ function renderLocked() {
 /* ---------- 본문 ---------- */
 function renderContent() {
   if (store.locked) { renderLocked(); return; }
-  if (ui.search.trim()) renderSearch();
-  else if (ui.view === 'jobs') renderJobs();
+  if (ui.view === 'jobs') renderJobs();
   else if (ui.view === 'pay') renderPay();
   else if (ui.view === 'bonus') renderBonus();
   else renderCalendar();
@@ -584,7 +575,7 @@ function calendarGrid(y, m) {
 }
 
 /* Finder 목록 보기: 이름 / 날짜 / 시간 / 금액 */
-function listTable(list, opts = {}) {
+function listTable(list) {
   const k = ui.sort.key, dir = ui.sort.dir;
   const rows = list.map(s => ({ s, j: jobById(s.jobId), min: netMinutes(s), pay: shiftPay(s) }));
   const cmp = {
@@ -609,7 +600,7 @@ function listTable(list, opts = {}) {
       const rs = rows.filter(r => r.j.id === j.id);
       if (!rs.length) return;
       const sum = rs.reduce((a, r) => a + r.pay, 0), min = rs.reduce((a, r) => a + r.min, 0);
-      body += `<tr class="grp"><td colspan="4"><span class="nm"><span class="dot" style="background:${j.color}"></span>${esc(j.name)}<span class="sub">${rs.length}개 · ${fmtH(min)} · ${won(sum)}${!opts.search && j.weeklyBonus ? ' (주휴 제외)' : ''}</span></span></td></tr>`;
+      body += `<tr class="grp"><td colspan="4"><span class="nm"><span class="dot" style="background:${j.color}"></span>${esc(j.name)}<span class="sub">${rs.length}개 · ${fmtH(min)} · ${won(sum)}${j.weeklyBonus ? ' (주휴 제외)' : ''}</span></span></td></tr>`;
       body += rs.map(row).join('');
     });
   } else {
@@ -712,25 +703,6 @@ function renderJobs() {
       <thead><tr><th>이름</th><th class="r">시급</th><th class="r">${ui.m + 1}월 근무</th><th class="r">${ui.m + 1}월 금액</th></tr></thead>
       <tbody>${rows}</tbody></table>
     <p class="note">태그 색은 등록 순서대로 Red → Orange → Yellow → Green → Blue → Purple → Gray로 정해져요.</p>`;
-}
-
-/* 검색 */
-function matches(s, terms) {
-  const j = jobById(s.jobId), d = parseYmd(s.date);
-  const hay = [j.name, s.date, s.date.replace(/-/g, '.'), `${d.getMonth() + 1}.${d.getDate()}`, md(d),
-    `${d.getMonth() + 1}월`, `${d.getMonth() + 1}월 ${d.getDate()}일`, `${d.getDate()}일`,
-    `${WD_SUN[d.getDay()]}요일`, s.start, s.end].join(' ').toLowerCase();
-  return terms.every(t => hay.includes(t));
-}
-function renderSearch() {
-  const q = ui.search.trim();
-  const terms = q.toLowerCase().split(/\s+/);
-  const list = state.shifts.filter(s => (!ui.filter || s.jobId === ui.filter) && matches(s, terms)).sort(byDateStart);
-  setStatus(`검색 결과 ${list.length}개`);
-  content.innerHTML = `
-    <div class="sec-title">“${esc(q)}” 검색 결과 <small>${list.length}개 · 전체 기간</small></div>
-    ${filterBar()}
-    ${list.length ? listTable(list, { search: true }) : '<div class="empty"><p>찾는 근무가 없어요.<br><small>알바 이름, 날짜(10.5, 10월), 요일(월요일), 시간(09:00)으로 찾을 수 있어요.</small></p></div>'}`;
 }
 
 /* ============================================
@@ -1372,15 +1344,6 @@ function openSidebar() { win.classList.add('sb-open'); $('#scrim').hidden = fals
 function closeSidebar() { win.classList.remove('sb-open'); $('#scrim').hidden = true; syncPanelButtons(); }
 const isNarrow = () => window.innerWidth <= 760;
 
-function openSearch() {
-  ui.searchOpen = true; renderToolbar();
-  setTimeout(() => $('#searchInput').focus(), 30);
-}
-function closeSearch() {
-  ui.searchOpen = false; ui.search = ''; $('#searchInput').value = '';
-  renderAll();
-}
-
 /* ============================================
    달력 스와이프 (왼쪽 → 다음달 / 오른쪽 → 전달)
    ============================================ */
@@ -1388,7 +1351,7 @@ let swipe = null, clickGuard = 0;
 /* 밀거나 길게 누른 직후에 따라오는 가짜 탭을 한 번 무시해요 */
 const skipNextClick = () => { clickGuard = Date.now(); };
 const canSwipeMonth = () =>
-  ui.view === 'calendar' && ui.mode === 'grid' && !ui.search.trim() &&
+  ui.view === 'calendar' && ui.mode === 'grid' &&
   sheetWrap.hidden && !!state.jobs.length;
 
 scroller.addEventListener('touchstart', e => {
@@ -1482,7 +1445,6 @@ function goMonth(y, m) {
 }
 function goView(v) {
   ui.view = v;
-  if (ui.search) { ui.search = ''; ui.searchOpen = false; $('#searchInput').value = ''; }
   if (isNarrow()) closeSidebar();
   scroller.scrollTop = 0;
   renderAll();
@@ -1523,14 +1485,14 @@ document.addEventListener('click', e => {
     case 'pick-ym': goMonth(Number(t.dataset.y), Number(t.dataset.m)); break;
     case 'go-today': goMonth(THIS_M.y, THIS_M.m); break;
     case 'toggle-mode':
-      if (ui.view !== 'calendar' || ui.search) { ui.view = 'calendar'; ui.mode = 'list'; ui.search = ''; ui.searchOpen = false; $('#searchInput').value = ''; }
+      if (ui.view !== 'calendar') { ui.view = 'calendar'; ui.mode = 'list'; }
       else ui.mode = ui.mode === 'grid' ? 'list' : 'grid';
       renderAll();
       break;
     case 'mode-grid': ui.mode = 'grid'; renderAll(); break;
     case 'toggle-group':
       ui.group = !ui.group;
-      if (ui.group && !ui.search) { ui.view = 'calendar'; ui.mode = 'list'; }
+      if (ui.group) { ui.view = 'calendar'; ui.mode = 'list'; }
       renderAll();
       toast(ui.group ? '알바별로 묶어서 보여줘요.' : '묶어보기를 껐어요.');
       break;
@@ -1544,10 +1506,6 @@ document.addEventListener('click', e => {
     case 'menu':
       if (!menuEl.hidden) closeMenu();
       else { closePanels(); toggleMenu(true); }
-      break;
-    case 'search':
-      if (ui.searchOpen) closeSearch();                   // 한 번 더 누르면 닫고 검색어 초기화
-      else { closePanels(); openSearch(); }
       break;
     case 'theme':
       setTheme(t.dataset.mode);   // 메뉴는 열어둬서 낮·밤을 바로 비교할 수 있게
@@ -1637,12 +1595,6 @@ document.addEventListener('click', e => {
 
 document.addEventListener('input', e => {
   const t = e.target;
-  if (t.id === 'searchInput') {
-    ui.search = t.value;
-    scroller.scrollTop = 0;
-    renderSidebar(); renderContent();
-    return;
-  }
   if (sheetKind === 'day' && pop) {
     if (t.id === 'fJob') pop.jobId = t.value;
     else if (t.id === 'fStart') pop.start = t.value;
@@ -1674,7 +1626,6 @@ document.addEventListener('keydown', e => {
     if (ymOpen) { closeYm(); $('#monthBtn').focus(); return; }
     if (!sheetWrap.hidden) { closeSheet(); return; }
     if (win.classList.contains('sb-open')) { closeSidebar(); return; }
-    if (ui.searchOpen) { closeSearch(); return; }
   }
   const t = e.target;
   if ((e.key === 'Enter' || e.key === ' ') && t.getAttribute && t.getAttribute('role') === 'button' && t.dataset.action) {

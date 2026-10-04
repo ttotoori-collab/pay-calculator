@@ -4,7 +4,7 @@
    - 글꼴 같은 외부 파일: 저장해둔 걸 먼저 (cache-first)
    파일을 바꾸면 VERSION만 올려 주세요.
    ============================================ */
-const VERSION = 'wallet-v12';  // v12: 월 합계를 실수령액 중심으로
+const VERSION = 'wallet-v13';  // v13: 검색 버튼 삭제, 공유 버튼을 맨 오른쪽으로
 const APP_SHELL = [
   './',
   './index.html',
