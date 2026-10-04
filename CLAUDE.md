@@ -3,7 +3,7 @@
 이 저장소에서 작업할 때 먼저 읽어 주세요. 사용자와는 **한국어**로 대화해요.
 
 ## 한눈에 보기
-- 알바별 시급·근무시간·주휴수당을 계산하는 웹앱. **HTML / CSS / JavaScript만** 사용 (빌드 도구·프레임워크 없음)
+- 알바별 시급·근무시간·주휴수당을 계산하고, **가계부**(수입·지출)까지 적는 웹앱. **HTML / CSS / JavaScript만** 사용 (빌드 도구·프레임워크 없음)
 - 사이트: https://ttotoori-collab.github.io/pay-calculator/
 - 배포: `main`에 push하면 `.github/workflows/pages.yml`이 GitHub Pages로 자동 배포 (Pages Source = GitHub Actions)
 - PWA: 홈 화면 설치 + 오프라인 실행
@@ -27,11 +27,18 @@
   - `tax`/`insurance`: 공제할지 여부(true/false) · `taxRate`/`insuranceRate`: 비율(%)
   - 예전 데이터에는 없으니 normalize에서 `tax:false, taxRate:3.3, insurance:false, insuranceRate:10`으로 채움
   - 비율은 `safeRate()`로 0~100, 소수점 둘째 자리까지만 (이상한 값이면 기본값)
+  - **월급날**: `payday`(1~31, 기본 10) · `payMonth`(`'prev'` 지난달 / `'same'` 이번달 근무분, 기본 `'prev'`)
 - `shifts`: `{ id, jobId, date:'YYYY-MM-DD', start:'HH:MM', end:'HH:MM', breaks:[{start,end}] }`
 - `lastForm`: 마지막으로 입력한 근무 (새 근무 창 기본값)
 - 불러올 때 `normalize()`로 검사. 예전 데이터에 없는 값은 안전한 기본값으로 채움 (예: `weeklyBonus` 없으면 `false`)
 - 새 필드를 추가할 때도 **기존 데이터가 깨지지 않게** normalize에 기본값을 넣을 것
 - `lastExport`: 백업 파일을 마지막으로 받은 때 (없으면 0)
+- **가계부** (전부 normalize에서 기본값을 채워요 — 예전 백업도 그대로 열려요)
+  - `entries`: `{ id, date:'YYYY-MM-DD', type:'in'|'out', amount, categoryId, memo }`
+  - `dayMemos`: `{ 'YYYY-MM-DD': '그날 메모' }` (빈 글은 저장하지 않음)
+  - `categories`: `{ id, name, emoji, color, type:'in'|'out' }` — 기본 목록은 `CATS`
+  - `hiddenAuto`: 숨긴 자동 알바비 id 목록 (`auto:<jobId>:<날짜>`)
+- 마지막으로 본 화면은 localStorage **`wallet-tab`**(`work`|`money`)에 따로 저장 (근무 기록과 별개)
 - 백업: ⋯ 메뉴 → JSON 내보내기/불러오기/모두 지우기
 
 ### 기록 보호 (★ 실제로 사용자 기록이 사라진 적이 있어요 — 이 규칙을 지켜 주세요)
@@ -69,6 +76,28 @@
 - 확인용 예
   - 9:00~20:00, 휴게 12~13시·17~18시 → 9시간
   - 시급 10,000원 · 10시간 · 세금 3.3% → 합계 100,000원, 공제 3,300원, **실수령 96,700원**
+
+## 가계부 (1단계)
+- 화면 두 개를 **`ui.app`**(`'work'`|`'money'`)으로 전환. 본문 카드 맨 위 세그먼트 버튼(`appTabs()`, `.seg`)과 사이드바 Favorites의 **Money**
+  - 툴바·달 이동·스와이프는 두 화면에서 똑같이 동작 (`canSwipeMonth()`가 가계부도 허용)
+  - 보기 전환·묶어보기 버튼은 알바 목록 전용이라 가계부에서는 숨김
+- **달력**(`moneyGrid()`): 날짜 칸에 그날 합계만 — 수입 `+`(`--income`), 지출 `−`(`--expense`). 메모가 있으면 ✎
+  - `moneyShort()` — 휴대폰은 만원 단위 소수 한 자리(`+9.3만`), 컴퓨터는 원 단위(`+93,000`). 화면 폭이 바뀌면 다시 그려요
+- **월 요약**(`moneySummary()`): 수입 · 지출 · 남은 돈 + 지출 많은 카테고리 3개 막대
+- **날짜 상세 시트**(`openMoneyDay()`, `sheetKind === 'money'`) — 근무 입력 시트와 **같은 규칙**
+  - 기록이 있으면 입력칸을 접고 "+ 기록 추가"를 눌러야 펼쳐짐 (`mon.formOpen`). 삭제 뒤 "저장"으로 다시 생기는 실수를 막기 위한 구조 — **되돌리지 마세요**
+  - 아래 버튼: 접힘 "닫기" / 새 기록 "취소"+"추가" / 수정 "취소"+"수정 저장" (`renderMonFoot()`)
+  - 목록·버튼·입력칸은 **`renderMoneySheet()` 하나로** 같이 그려요
+  - 삭제는 확인 없이 바로, **5초 "실행 취소"**
+  - "오늘의 메모"는 적는 대로 자동 저장 (`saveDayMemo()`)
+- **카테고리**: 월 요약의 "카테고리 관리" 버튼 → `openCatsSheet()`. 추가·수정·삭제 가능
+  - **`etc-out`/`etc-in`(기타)은 지울 수 없어요.** 카테고리를 지우면 그 기록이 여기로 옮겨가요 (실행 취소하면 원래 카테고리로 복구)
+  - 기본 카테고리 id는 고정 — 바꾸면 예전 기록의 카테고리가 끊어져요
+- **알바비 자동 수입**(`autoPayEntries()`): 월급날에 그 알바의 **실수령액**이 "알바비" 수입으로 떠요
+  - **저장하지 않고 그때그때 계산** — 근무를 고치면 바로 반영돼요. 목록에 "자동" 배지
+  - 그 달에 없는 날짜(31일 지정 + 30일까지인 달)면 **말일**로
+  - 지울 수는 없고 "이번 달만 숨기기"(`hiddenAuto`), 5초 안에 실행 취소 가능
+- 새 색은 CSS 변수로만: `--income` · `--expense` · `--seg-bg` · `--seg-on`
 
 ## 디자인: macOS Finder 창 + 바닷속 (낮/밤 모드)
 - 창 구조는 macOS Finder 그대로, 색만 "바닷속"으로 입혔어요. 레이아웃·기능은 모드와 상관없이 똑같아요
@@ -153,7 +182,7 @@
 - 글자 대비는 두 모드 모두 **4.5:1 이상**으로 맞춰 둠. 가장 흐린 `--gray2`는 주말 날짜·힌트처럼 정말 보조적인 곳에만 쓰기
 
 ## 고칠 때 꼭 지킬 것
-- 앱 파일(아이콘 포함)을 바꾸면 **`sw.js`의 `VERSION`을 올리기** (지금 `wallet-v13`). 새 파일이 생기면 `APP_SHELL`에도 추가
+- 앱 파일(아이콘 포함)을 바꾸면 **`sw.js`의 `VERSION`을 올리기** (지금 `wallet-v14`). 새 파일이 생기면 `APP_SHELL`에도 추가
 - 사용자 입력은 화면에 넣기 전에 `esc()`로 처리
 - 고친 뒤 확인: 계산 결과(위 예시), PC 화면, 휴대폰 폭(390px) 가로 스크롤 없음, 콘솔 오류 없음
 - service worker는 `file://`에서 동작하지 않으니 오프라인 확인은 `python3 -m http.server`로

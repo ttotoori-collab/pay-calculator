@@ -57,6 +57,10 @@
   --red:#d7453f;
   --ok:#1c7a4c;
   --warn:#8a5a00;
+  --income:#1c7a4c;
+  --expense:#c23b3b;
+  --seg-bg:rgba(13,79,124,.09);
+  --seg-on:#fff;
   --ring:rgba(27,143,176,.3);
   --sel-row:rgba(27,143,176,.16);
 
@@ -120,6 +124,10 @@
   --red:#ff6b6b;
   --ok:#5ee6a4;
   --warn:#ffc879;
+  --income:#5ee6a4;
+  --expense:#ff8a8a;
+  --seg-bg:rgba(124,247,255,.1);
+  --seg-on:#27456f;
   --ring:rgba(124,247,255,.35);
   --sel-row:rgba(47,127,224,.32);
 
@@ -569,6 +577,65 @@ input:focus,select:focus{outline:3px solid var(--ring);border-color:var(--blue)}
 .sw{width:20px;height:20px;border-radius:50%;border:0;padding:0;box-shadow:inset 0 0 0 1px rgba(0,0,0,.1)}
 .sw.on{box-shadow:0 0 0 2px var(--panel),0 0 0 3.5px var(--text2)}
 
+/* ============================================
+   가계부
+   ============================================ */
+/* macOS 세그먼트 버튼 */
+.seg{display:inline-flex;padding:2px;border-radius:8px;background:var(--seg-bg);gap:2px}
+.seg-btn{
+  min-height:28px;padding:0 14px;border:0;border-radius:6px;background:none;
+  font-size:12.5px;font-weight:500;color:var(--text2);
+}
+.seg-btn.on{background:var(--seg-on);color:var(--title);font-weight:600;box-shadow:0 .5px 2px rgba(0,0,0,.14)}
+@media (hover:hover){.seg-btn:not(.on):hover{color:var(--title)}}
+.seg.small .seg-btn{min-height:26px;padding:0 12px;font-size:12px}
+.content > .seg,.card > .seg{margin:4px 0 10px}
+
+/* 달력 칸의 금액 */
+.cal.money .cell{min-height:76px}
+.mv{margin-top:2px;font-size:11.5px;font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums;
+  overflow:hidden;text-overflow:ellipsis}
+.mv.in{color:var(--income)}
+.mv.out{color:var(--expense)}
+.mv.memo{color:var(--gray2);font-weight:400}
+
+/* 월 요약 */
+.money-sum td{font-size:13px}
+.money-sum td.in{color:var(--income);font-weight:600}
+.money-sum td.out{color:var(--expense);font-weight:600}
+.grand b.minus{color:var(--expense)}
+.top-cats{display:flex;flex-direction:column;gap:7px;margin-top:4px}
+.top-row{display:grid;grid-template-columns:minmax(84px,auto) 1fr minmax(96px,auto);align-items:center;gap:10px;font-size:12.5px}
+.top-name{display:flex;align-items:center;gap:6px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top-bar{height:8px;border-radius:4px;background:var(--soft-2);overflow:hidden}
+.top-bar i{display:block;height:100%;border-radius:4px}
+.top-sum{text-align:right;font-variant-numeric:tabular-nums;color:var(--text2)}
+.top-sum small{color:var(--gray2);margin-left:3px}
+
+/* 카테고리 동그라미 (이모지) */
+.cat-dot{
+  width:24px;height:24px;border-radius:50%;flex:none;
+  display:inline-flex;align-items:center;justify-content:center;font-size:13px;line-height:1;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.08);
+}
+.day-row .amt{margin-left:6px;font-weight:600;font-variant-numeric:tabular-nums}
+.day-row .amt.in{color:var(--income)}
+.day-row .amt.out{color:var(--expense)}
+
+/* 오늘의 메모 */
+.daymemo{
+  display:block;width:100%;margin-top:6px;padding:8px 10px;resize:vertical;min-height:48px;
+  border:1px solid var(--field-border);border-radius:8px;background:var(--field);
+  font:inherit;font-size:13px;color:var(--text);line-height:1.5;
+}
+.daymemo:focus{outline:3px solid var(--ring);border-color:var(--blue)}
+
+/* 이모지 고르기 */
+.emojis{display:flex;flex-wrap:wrap;gap:4px}
+.emo{width:30px;height:30px;border:0;border-radius:7px;background:var(--soft);font-size:15px;line-height:1;padding:0}
+@media (hover:hover){.emo:hover{background:var(--active)}}
+.emo.on{box-shadow:0 0 0 2px var(--panel),0 0 0 3.5px var(--blue)}
+
 /* 토스트 */
 .toast{
   position:fixed;left:50%;bottom:28px;z-index:60;transform:translate(-50%,10px);
@@ -691,6 +758,16 @@ input:focus,select:focus{outline:3px solid var(--ring);border-color:var(--blue)}
   .ftable.sum tbody tr.ded td::before{content:none}
   .ftable.sum tbody tr.ded.net td{font-weight:600}
   .rate{width:84px}
+  /* 가계부 */
+  .cal.money .cell{min-height:60px}
+  .mv{font-size:10.5px;margin-top:1px}
+  .seg-btn{padding:0 16px;min-height:30px;font-size:13px}
+  .top-row{grid-template-columns:minmax(64px,auto) 1fr minmax(80px,auto);gap:7px;font-size:12px}
+  .top-sum small{display:none}
+  .ftable.sum.money-sum tbody tr{display:flex;justify-content:space-between;gap:10px;padding:7px 6px}
+  .ftable.sum.money-sum tbody tr td{display:block;grid-column:auto;margin:0;font-weight:inherit}
+  .ftable.sum.money-sum tbody td::before{content:none}
+  .daymemo{font-size:16px}   /* 아이폰에서 확대되지 않게 */
 }
 
 /* ============================================

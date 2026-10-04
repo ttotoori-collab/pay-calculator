@@ -7,6 +7,7 @@
 const STORE_KEY = 'seran-albailgi-v1';
 const BACKUP_KEY = 'seran-albailgi-v1-backup';   // 직전 상태 사본 (주 기록이 깨졌을 때 되살리기용)
 const THEME_KEY = 'wallet-theme';          // 화면 모드만 따로 저장 (근무 기록과 별개)
+const TAB_KEY = 'wallet-tab';              // 마지막으로 본 화면 (work | money)
 const NUDGE_DAYS = 14;                     // 이만큼 백업을 안 받으면 한 번 알려줘요
 const START = { y: 2026, m: 9 };          // 기본 화면: 2026년 10월 (월은 0부터)
 const TAGS = [                             // Finder 태그 색, 등록 순서대로 자동 배정
@@ -41,7 +42,8 @@ const ICONS = {
   gift: '<rect x="4" y="9" width="16" height="11" rx="1.6"/><path d="M3.5 9h17M12 9v11"/><path d="M12 9C10.6 5.6 7 5.2 7 7.4 7 8.6 9.6 9 12 9zM12 9c1.4-3.4 5-3.8 5-1.6C17 8.6 14.4 9 12 9z"/>',
   cloud: '<path d="M7.2 18.5h9.9a4 4 0 0 0 .5-7.96A5.4 5.4 0 0 0 7.3 9.3a4.6 4.6 0 0 0-.1 9.2z"/>',
   clock: '<circle cx="12" cy="12" r="8.6"/><path d="M12 7.4V12l3 2"/>',
-  tags: '<circle cx="9.3" cy="12" r="5.2"/><path d="M13.2 7.4a5.2 5.2 0 1 1 0 9.2"/>'
+  tags: '<circle cx="9.3" cy="12" r="5.2"/><path d="M13.2 7.4a5.2 5.2 0 1 1 0 9.2"/>',
+  book: '<path d="M4 5.4A1.9 1.9 0 0 1 5.9 3.5H19a1 1 0 0 1 1 1v13.2"/><path d="M4 5.4v13.2A1.9 1.9 0 0 0 5.9 20.5H20"/><path d="M8 8.2h7.5M8 11.6h7.5M8 15h4.5"/>'
 };
 const icon = (n, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ''}</svg>`;
 
@@ -83,9 +85,34 @@ const TODAY = keyOf(new Date());
 const THIS_M = (() => { const n = new Date(); return { y: n.getFullYear(), m: n.getMonth() }; })();
 
 /* ============================================
+   가계부 — 기본 카테고리
+   id는 고정이에요 (바꾸면 예전 기록의 카테고리가 끊어져요)
+   'etc-out' / 'etc-in'은 지울 수 없어요 — 카테고리를 지우면 그 기록이 여기로 와요
+   ============================================ */
+const CATS = [
+  { id: 'food', name: '식비', emoji: '🍚', color: '#ec5a57', type: 'out' },
+  { id: 'cafe', name: '카페·간식', emoji: '☕', color: '#c9803f', type: 'out' },
+  { id: 'transit', name: '교통', emoji: '🚌', color: '#3f8ec9', type: 'out' },
+  { id: 'shop', name: '쇼핑', emoji: '🛍️', color: '#d664a6', type: 'out' },
+  { id: 'living', name: '생활', emoji: '🧻', color: '#6f8f5a', type: 'out' },
+  { id: 'telecom', name: '통신·구독', emoji: '📱', color: '#7b6bd6', type: 'out' },
+  { id: 'fun', name: '문화·여가', emoji: '🎬', color: '#d6a13c', type: 'out' },
+  { id: 'edu', name: '교육', emoji: '📚', color: '#3fa89a', type: 'out' },
+  { id: 'etc-out', name: '기타', emoji: '✨', color: '#8a8a8a', type: 'out' },
+  { id: 'pay', name: '알바비', emoji: '💸', color: '#2e9e63', type: 'in' },
+  { id: 'allowance', name: '용돈', emoji: '🎁', color: '#4a90d9', type: 'in' },
+  { id: 'etc-in', name: '기타', emoji: '✨', color: '#8a8a8a', type: 'in' }
+];
+const FALLBACK_CAT = { out: 'etc-out', in: 'etc-in' };
+const CAT_EMOJI = ['🍚','☕','🚌','🛍️','🧻','📱','🎬','📚','✨','💸','🎁','🏥','🐶','🎮','✈️','🎵','💄','🏠','⚽','🍺'];
+
+/* ============================================
    저장 / 불러오기
    ============================================ */
-const defaultState = () => ({ version: 2, jobs: [], shifts: [], lastForm: null, lastExport: 0 });
+const defaultState = () => ({
+  version: 2, jobs: [], shifts: [], lastForm: null, lastExport: 0,
+  entries: [], dayMemos: {}, categories: CATS.map(c => ({ ...c })), hiddenAuto: []
+});
 
 function normalize(d) {
   if (!d || typeof d !== 'object') return defaultState();
@@ -101,7 +128,10 @@ function normalize(d) {
       tax: j.tax === true,
       taxRate: safeRate(j.taxRate, 3.3),
       insurance: j.insurance === true,
-      insuranceRate: safeRate(j.insuranceRate, 10)
+      insuranceRate: safeRate(j.insuranceRate, 10),
+      // 월급날 — 예전 데이터에는 없으니 매달 10일 · 지난달 근무분으로 채워요
+      payday: Math.min(31, Math.max(1, Math.round(Number(j.payday)) || 10)),
+      payMonth: j.payMonth === 'same' ? 'same' : 'prev'
     })) : [];
   const ids = new Set(jobs.map(j => j.id));
   const shifts = Array.isArray(d.shifts) ? d.shifts
@@ -113,11 +143,52 @@ function normalize(d) {
         ? s.breaks.filter(b => b && TIME_RE.test(b.start) && TIME_RE.test(b.end)).map(b => ({ start: b.start, end: b.end }))
         : []
     })) : [];
+  // ---- 가계부 ----
+  // 카테고리: 예전 데이터에 없으면 기본 카테고리로. 기본 '기타'는 지워졌어도 되살려요
+  let categories = Array.isArray(d.categories) && d.categories.length
+    ? d.categories
+      .filter(c => c && c.id && c.name)
+      .map(c => ({
+        id: String(c.id),
+        name: String(c.name).slice(0, 12),
+        emoji: String(c.emoji || '✨').slice(0, 4),
+        color: safeColor(c.color),
+        type: c.type === 'in' ? 'in' : 'out'
+      }))
+    : CATS.map(c => ({ ...c }));
+  for (const need of ['etc-out', 'etc-in']) {
+    if (!categories.some(c => c.id === need)) categories.push({ ...CATS.find(c => c.id === need) });
+  }
+  const catOf = new Map(categories.map(c => [c.id, c]));
+
+  const entries = Array.isArray(d.entries) ? d.entries
+    .filter(e => e && e.id && /^\d{4}-\d{2}-\d{2}$/.test(e.date) && Number(e.amount) > 0)
+    .map(e => {
+      const type = e.type === 'in' ? 'in' : 'out';
+      const cat = catOf.get(String(e.categoryId));
+      return {
+        id: String(e.id), date: e.date, type,
+        amount: Math.round(Number(e.amount)),
+        // 카테고리가 지워졌거나 종류가 안 맞으면 그 종류의 '기타'로
+        categoryId: cat && cat.type === type ? cat.id : FALLBACK_CAT[type],
+        memo: String(e.memo || '').slice(0, 60)
+      };
+    }) : [];
+
+  const dayMemos = {};
+  if (d.dayMemos && typeof d.dayMemos === 'object') {
+    for (const [k, v] of Object.entries(d.dayMemos)) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(k) && typeof v === 'string' && v.trim()) dayMemos[k] = v.slice(0, 500);
+    }
+  }
+  const hiddenAuto = Array.isArray(d.hiddenAuto) ? [...new Set(d.hiddenAuto.filter(x => typeof x === 'string'))] : [];
+
   return {
     ...d,                       // 예전 버전에서 쓰던 값(메모 등)은 그대로 보관
     version: 2, jobs, shifts,
     lastForm: d.lastForm && TIME_RE.test(d.lastForm.start) ? d.lastForm : null,
-    lastExport: Math.max(0, Number(d.lastExport) || 0)
+    lastExport: Math.max(0, Number(d.lastExport) || 0),
+    entries, dayMemos, categories, hiddenAuto
   };
 }
 
@@ -231,8 +302,17 @@ if (darkMq) {
   darkMq.addEventListener ? darkMq.addEventListener('change', onScheme) : darkMq.addListener(onScheme);
 }
 
+function loadTab() {
+  try { return localStorage.getItem(TAB_KEY) === 'money' ? 'money' : 'work'; }
+  catch (e) { return 'work'; }
+}
+function saveTab() {
+  try { localStorage.setItem(TAB_KEY, ui.app); } catch (e) { /* 시크릿 모드 */ }
+}
+
 let state = load();
 const ui = {
+  app: loadTab(),        // work(알바) | money(가계부)
   view: 'calendar',      // calendar | jobs | pay | bonus
   mode: 'grid',          // grid(달력) | list(리스트)
   group: false,          // 알바별 묶어보기
@@ -361,6 +441,69 @@ function spillWeek(y, m) {
   return { mon, sun };
 }
 
+/* ============================================
+   가계부 계산
+   ============================================ */
+const catById = id => state.categories.find(c => c.id === id);
+const catsOf = type => state.categories.filter(c => c.type === type);
+const catSafe = (id, type) => catById(id) || catById(FALLBACK_CAT[type]) || state.categories[0];
+
+/* 월급날에 자동으로 생기는 "알바비" 수입.
+   저장하지 않고 그때그때 계산해요 — 근무를 고치면 바로 반영되게. */
+function autoPayEntries(y, m) {
+  const out = [];
+  const last = new Date(y, m + 1, 0).getDate();
+  for (const job of state.jobs) {
+    const day = Math.min(job.payday || 10, last);          // 그 달에 없는 날짜면 말일로
+    const date = ymd(y, m, day);
+    // 어느 달 근무분인지
+    const w = job.payMonth === 'same' ? new Date(y, m, 1) : new Date(y, m - 1, 1);
+    const wc = monthCalc(w.getFullYear(), w.getMonth());
+    const row = wc.jobs.find(r => r.job.id === job.id);
+    if (!row || row.net <= 0) continue;
+    const id = `auto:${job.id}:${date}`;
+    if (state.hiddenAuto.includes(id)) continue;
+    out.push({
+      id, date, type: 'in', amount: row.net, categoryId: 'pay', auto: true,
+      memo: `${job.name} · ${w.getMonth() + 1}월 근무분`
+    });
+  }
+  return out;
+}
+
+/* 그날 기록 (직접 쓴 것 + 자동 알바비) */
+function entriesOn(date) {
+  const [y, m] = date.split('-').map(Number);
+  const mine = state.entries.filter(e => e.date === date);
+  const auto = autoPayEntries(y, m - 1).filter(e => e.date === date);
+  return [...auto, ...mine];
+}
+
+/* 그 달 전체 */
+function monthMoney(y, m) {
+  const pre = `${y}-${pad(m + 1)}`;
+  const list = [...autoPayEntries(y, m), ...state.entries.filter(e => e.date.startsWith(pre))];
+  let income = 0, expense = 0;
+  const byCat = new Map();
+  const byDay = new Map();
+  for (const e of list) {
+    if (e.type === 'in') income += e.amount; else expense += e.amount;
+    if (e.type === 'out') byCat.set(e.categoryId, (byCat.get(e.categoryId) || 0) + e.amount);
+    const d = byDay.get(e.date) || { in: 0, out: 0 };
+    d[e.type] += e.amount;
+    byDay.set(e.date, d);
+  }
+  const top = [...byCat.entries()]
+    .map(([id, sum]) => ({ cat: catSafe(id, 'out'), sum }))
+    .sort((a, b) => b.sum - a.sum).slice(0, 3);
+  return { list, income, expense, left: income - expense, top, byDay, count: list.length };
+}
+
+/* 금액 짧게 — 휴대폰은 만원 단위, 컴퓨터는 원 단위 */
+const moneyShort = n => isNarrow()
+  ? `${(Math.round(n / 1000) / 10).toFixed(1)}만`
+  : Math.round(n).toLocaleString('ko-KR');
+
 function nextTagColor() {
   const used = new Set(state.jobs.map(j => j.color));
   const free = TAGS.find(t => !used.has(t.color));
@@ -406,6 +549,7 @@ const walletShort = n => n >= 1e6 ? `₩${Math.round(n / 1e4).toLocaleString('ko
 function renderSidebar() {
   const c = monthCalc(ui.y, ui.m);
   const tagActive = ui.filter && ui.view === 'calendar';
+  const mm = monthMoney(ui.y, ui.m);
   const fav = [
     ['calendar', 'calendar', 'Calendar', '달력'],
     ['jobs', 'briefcase', 'Jobs', '알바 등록'],
@@ -419,9 +563,12 @@ function renderSidebar() {
   $('#sbNav').innerHTML = `
     <div class="sb-sec">Favorites</div>
     ${fav.map(([v, ic, label, ko]) => `
-      <button type="button" class="sb-item ${ui.view === v && !tagActive ? 'on' : ''}" data-action="view" data-view="${v}" title="${ko}">
+      <button type="button" class="sb-item ${ui.app === 'work' && ui.view === v && !tagActive ? 'on' : ''}" data-action="view" data-view="${v}" title="${ko}">
         ${icon(ic)}<span>${label}</span>
       </button>`).join('')}
+    <button type="button" class="sb-item ${ui.app === 'money' ? 'on' : ''}" data-action="go-money" title="가계부">
+      ${icon('book')}<span>Money</span><span class="sb-num">${mm.count ? walletShort(mm.left) : ''}</span>
+    </button>
     <div class="sb-sec">iCloud</div>
     <button type="button" class="sb-item" data-action="view" data-view="pay" title="${ui.m + 1}월 실수령액${c.deducted ? ` (공제 전 ${won(c.total)})` : ''}">
       ${icon('cloud')}<span>This Month</span><span class="sb-num">${walletShort(c.net)}</span>
@@ -470,6 +617,10 @@ function renderToolbar() {
   const g = $('#groupBtn');
   g.classList.toggle('on', ui.group);
   g.setAttribute('aria-pressed', String(ui.group));
+  // 보기 전환·묶어보기는 알바 목록에만 쓰는 버튼이라 가계부에서는 숨겨요
+  const workOnly = ui.app === 'work';
+  $('#modeBtn').hidden = !workOnly;
+  g.hidden = !workOnly;
   syncPanelButtons();
 }
 
@@ -508,8 +659,17 @@ function renderLocked() {
 }
 
 /* ---------- 본문 ---------- */
+/* 본문 카드 맨 위 [알바 | 가계부] 전환 (macOS 세그먼트 버튼) */
+function appTabs() {
+  const tab = (id, label) =>
+    `<button type="button" class="seg-btn ${ui.app === id ? 'on' : ''}" data-action="go-app" data-app="${id}"
+      aria-pressed="${ui.app === id}">${label}</button>`;
+  return `<div class="seg" role="group" aria-label="화면 전환">${tab('work', '알바')}${tab('money', '가계부')}</div>`;
+}
+
 function renderContent() {
   if (store.locked) { renderLocked(); return; }
+  if (ui.app === 'money') { renderMoney(); return; }
   if (ui.view === 'jobs') renderJobs();
   else if (ui.view === 'pay') renderPay();
   else if (ui.view === 'bonus') renderBonus();
@@ -519,7 +679,7 @@ function renderContent() {
 function setStatus(text) { $('#statusbar').textContent = text; }
 
 function emptyJobs() {
-  return `<div class="empty">
+  return `${appTabs()}<div class="empty">
     <div class="big">👛</div>
     <p>아직 등록한 알바가 없어요.<br>먼저 하고 있는 알바를 등록해 주세요.</p>
     <button type="button" class="mbtn blue" data-action="add-job">알바 등록</button>
@@ -543,11 +703,11 @@ function renderCalendar() {
   if (!state.jobs.length) { content.innerHTML = emptyJobs(); return; }
 
   if (ui.mode === 'list') {
-    content.innerHTML = `${filterBar()}
+    content.innerHTML = `${appTabs()}${filterBar()}
       ${list.length ? listTable(list) : `<div class="empty"><p>${m + 1}월에는 아직 근무 기록이 없어요.</p><button type="button" class="mbtn" data-action="mode-grid">달력에서 기록하기</button></div>`}`;
     return;
   }
-  content.innerHTML = `${filterBar()}
+  content.innerHTML = `${appTabs()}${filterBar()}
     ${calendarGrid(y, m)}
     <div class="sec-title">${m + 1}월 알바비 <small>알바별 요약</small></div>
     ${summaryTable(calc)}`;
@@ -572,6 +732,65 @@ function calendarGrid(y, m) {
   const trail = (7 - (offset + days) % 7) % 7;
   for (let i = 0; i < trail; i++) h += '<div class="cell dim"></div>';
   return h + '</div>';
+}
+
+/* ============================================
+   가계부 화면
+   ============================================ */
+function renderMoney() {
+  const y = ui.y, m = ui.m;
+  const mm = monthMoney(y, m);
+  setStatus(`${m + 1}월 수입 ${won(mm.income)} · 지출 ${won(mm.expense)} · 남은 돈 ${won(mm.left)}`);
+  content.innerHTML = `${appTabs()}
+    ${moneyGrid(y, m, mm)}
+    <div class="sec-title">${m + 1}월 가계부 <small>수입·지출 요약</small>
+      <button type="button" class="mbtn small push" data-action="manage-cats">카테고리 관리</button></div>
+    ${moneySummary(mm)}`;
+}
+
+function moneyGrid(y, m, mm) {
+  const first = new Date(y, m, 1), offset = (first.getDay() + 6) % 7, days = new Date(y, m + 1, 0).getDate();
+  let h = '<div class="cal money">';
+  WD_MON.forEach(w => { h += `<div class="cal-wd">${w}</div>`; });
+  for (let i = 0; i < offset; i++) h += '<div class="cell dim"></div>';
+  for (let d = 1; d <= days; d++) {
+    const key = ymd(y, m, d), wd = (offset + d - 1) % 7;
+    const sum = mm.byDay.get(key);
+    const cls = ['cell', 'day', wd >= 5 ? 'wkend' : '', key === TODAY ? 'today' : ''].join(' ');
+    let evs = '';
+    let label = '';
+    if (sum && sum.in) { evs += `<div class="mv in">+${moneyShort(sum.in)}</div>`; label += `, 수입 ${won(sum.in)}`; }
+    if (sum && sum.out) { evs += `<div class="mv out">−${moneyShort(sum.out)}</div>`; label += `, 지출 ${won(sum.out)}`; }
+    if (state.dayMemos[key]) evs += '<div class="mv memo" title="메모 있음">✎</div>';
+    h += `<div class="${cls}" role="button" tabindex="0" data-action="open-money-day" data-date="${key}"
+      aria-label="${m + 1}월 ${d}일${label}"><span class="dnum">${d}</span>${evs}</div>`;
+  }
+  const trail = (7 - (offset + days) % 7) % 7;
+  for (let i = 0; i < trail; i++) h += '<div class="cell dim"></div>';
+  return h + '</div>';
+}
+
+function moneySummary(mm) {
+  if (!mm.count) {
+    return `<div class="empty" style="padding:40px 20px">
+      <div class="big">🧾</div>
+      <p>${ui.m + 1}월에는 아직 기록이 없어요.<br>날짜를 눌러서 수입·지출을 적어 보세요.</p></div>`;
+  }
+  const bar = mm.top.length && mm.expense ? `
+    <div class="sec-title" style="margin-top:16px">지출이 많은 곳 <small>상위 ${mm.top.length}개</small></div>
+    <div class="top-cats">${mm.top.map(t => `
+      <div class="top-row">
+        <span class="top-name"><span class="cat-dot" style="background:${t.cat.color}">${t.cat.emoji}</span>${esc(t.cat.name)}</span>
+        <span class="top-bar"><i style="width:${Math.round(t.sum / mm.top[0].sum * 100)}%;background:${t.cat.color}"></i></span>
+        <span class="top-sum">${won(t.sum)} <small>${Math.round(t.sum / mm.expense * 100)}%</small></span>
+      </div>`).join('')}</div>` : '';
+  return `<table class="ftable sum money-sum">
+      <tbody>
+        <tr><td data-label="수입">수입</td><td class="r in">${won(mm.income)}</td></tr>
+        <tr><td data-label="지출">지출</td><td class="r out">−${won(mm.expense)}</td></tr>
+      </tbody></table>
+    <div class="grand"><span>${ui.m + 1}월 남은 돈</span><b class="${mm.left < 0 ? 'minus' : ''}">${won(mm.left)}</b></div>
+    ${bar}`;
 }
 
 /* Finder 목록 보기: 이름 / 날짜 / 시간 / 금액 */
@@ -643,7 +862,7 @@ function renderPay() {
   setStatus(`${ui.y}년 ${ui.m + 1}월 정산 · 총 ${won(c.total)}${c.deducted ? ` · 실수령 ${won(c.net)}` : ''}`);
   if (!state.jobs.length) { content.innerHTML = emptyJobs(); return; }
   const spill = spillWeek(ui.y, ui.m);
-  content.innerHTML = `
+  content.innerHTML = `${appTabs()}
     <div class="sec-title">Monthly Pay <small>${ui.y}년 ${ui.m + 1}월</small>
       <button type="button" class="mbtn small push" data-action="share">이미지로 저장</button></div>
     ${summaryTable(c)}
@@ -668,7 +887,7 @@ function renderBonus() {
         <td data-label="주휴시간" class="r ${w.ok ? 'ok' : 'no'}">${w.ok ? fmtH(w.hours * 60) : '15시간 미만'}</td>
         <td data-label="주휴수당" class="r strong">${won(w.pay)}</td></tr>`).join('')}</tbody>
     </table>`).join('');
-  content.innerHTML = `
+  content.innerHTML = `${appTabs()}
     <div class="sec-title">Weekly Bonus <small>${ui.y}년 ${ui.m + 1}월 주휴수당</small></div>
     ${boxes || `<div class="empty" style="padding:40px 20px"><p>주휴수당을 따로 받는 알바가 없어요.<br><small>알바 수정 창에서 "주휴수당 별도 지급"을 체크하면 여기에 주별로 나와요.</small></p>
       <button type="button" class="mbtn" data-action="view" data-view="jobs">Jobs 열기</button></div>`}
@@ -695,7 +914,7 @@ function renderJobs() {
       <td data-label="시급" class="r">${won(r.job.wage)}${r.bonus ? '' : ' <span class="sub">(주휴 포함)</span>'}</td>
       <td data-label="${ui.m + 1}월 근무" class="r">${r.days}일 · ${fmtH(r.minutes)}</td>
       <td data-label="${ui.m + 1}월 금액" class="r strong">${won(r.total)}</td></tr>`).join('');
-  content.innerHTML = `
+  content.innerHTML = `${appTabs()}
     <div class="sec-title">Jobs <small>눌러서 수정·삭제</small>
       <button type="button" class="mbtn small push" data-action="manage-jobs">알바 관리</button>
       <button type="button" class="mbtn small" data-action="add-job">+ 알바 등록</button></div>
@@ -726,7 +945,7 @@ function openSheet(kind, html) {
 }
 function closeSheet() {
   if (sheetWrap.hidden) return;
-  sheetKind = null; pop = null; jobEdit = null;
+  sheetKind = null; pop = null; jobEdit = null; mon = null; catEdit = null;
   sheetEl.classList.add('closing');
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   closeTimer = setTimeout(() => {
@@ -989,6 +1208,299 @@ function deleteShift(id) {
   });
 }
 
+/* ============================================
+   가계부 — 날짜 상세 시트
+   근무 입력 시트와 같은 규칙: 기록이 있으면 입력칸을 접어둬요
+   (지우고 나서 "저장"을 눌러 다시 생기는 실수가 없게)
+   ============================================ */
+let mon = null;   // money day 상태
+
+function openMoneyDay(date, editId) {
+  const dt = parseYmd(date);
+  mon = { date, editId: null, type: 'out', amount: '', categoryId: FALLBACK_CAT.out, memo: '', formOpen: false };
+  mon.formOpen = !!editId || !entriesOn(date).length;
+  resetMoneyForm();
+  openSheet('money', `
+    <div class="sheet-head" id="sheetTitle">${longDate(date)}</div>
+    <div class="sheet-body">
+      <div class="day-list" id="monList"></div>
+      <button type="button" class="mbtn addbtn" id="addEntry" data-action="open-entry-form" hidden>+ 기록 추가</button>
+      <div id="entryForm" hidden>
+        <div class="form-head" id="monFormHead"><span id="monFormTitle"></span>
+          <button type="button" class="linkbtn" data-action="cancel-entry-edit" id="cancelEntryEdit" hidden>새로 쓰기</button></div>
+        <div class="frow"><span class="lbl">종류</span>
+          <div class="seg small" role="group" aria-label="수입 / 지출">
+            <button type="button" class="seg-btn" id="typeOut" data-action="entry-type" data-type="out">지출</button>
+            <button type="button" class="seg-btn" id="typeIn" data-action="entry-type" data-type="in">수입</button>
+          </div></div>
+        <div class="frow"><label for="eAmount">금액</label>
+          <div class="fctl"><input type="number" id="eAmount" min="1" step="1" inputmode="numeric"
+            placeholder="0" style="width:140px;text-align:right"> 원</div></div>
+        <div class="frow"><label for="eCat">카테고리</label>
+          <select id="eCat"></select></div>
+        <div class="frow"><label for="eMemo">메모</label>
+          <input type="text" id="eMemo" maxlength="60" placeholder="(선택) 어디에 썼는지" style="flex:1;min-width:0"></div>
+      </div>
+      <div class="form-head" style="border-top:1px solid var(--faint)">오늘의 메모</div>
+      <textarea id="dayMemo" class="daymemo" rows="2" maxlength="500" placeholder="오늘 하루는 어땠나요? (자동 저장)"></textarea>
+    </div>
+    <div class="sheet-foot" id="monFoot"></div>`);
+  $('#dayMemo').value = state.dayMemos[date] || '';
+  if (editId) startEntryEdit(editId); else renderMoneySheet();
+}
+
+/* 목록 · 추가 버튼 · 입력칸 · 아래 버튼을 한 번에 맞춰 그려요 */
+function renderMoneySheet() {
+  if (sheetKind !== 'money' || !mon) return;
+  renderMonList();
+  $('#addEntry').hidden = mon.formOpen;
+  $('#entryForm').hidden = !mon.formOpen;
+  renderMonFoot();
+  if (mon.formOpen) refreshMoneyForm();
+}
+
+function renderMonFoot() {
+  const foot = $('#monFoot');
+  if (!mon.formOpen) {
+    foot.innerHTML = '<span class="spacer"></span><button type="button" class="mbtn blue" data-action="close-sheet">닫기</button>';
+    return;
+  }
+  const editing = !!mon.editId;
+  foot.innerHTML = '<span class="spacer"></span>' +
+    '<button type="button" class="mbtn" data-action="cancel-entry">취소</button>' +
+    `<button type="button" class="mbtn blue" data-action="save-entry">${editing ? '수정 저장' : '추가'}</button>`;
+}
+
+function renderMonList() {
+  const list = entriesOn(mon.date);
+  $('#monList').innerHTML = list.length ? list.map(e => {
+    const c = catSafe(e.categoryId, e.type);
+    const sign = e.type === 'in' ? '+' : '−';
+    return `<div class="day-row ${e.id === mon.editId ? 'editing' : ''}">
+      <span class="cat-dot" style="background:${c.color}">${c.emoji}</span>
+      <span class="dr-main"><b>${esc(c.name)}</b>${e.auto ? '<span class="jbadge">자동</span>' : ''}
+        <span class="amt ${e.type}">${sign}${won(e.amount)}</span>
+        ${e.memo ? `<small>${esc(e.memo)}</small>` : ''}</span>
+      <span class="dr-btns">${e.auto
+        ? `<button type="button" class="mbtn small" data-action="hide-auto" data-id="${esc(e.id)}" title="이번 달만 숨기기">숨기기</button>`
+        : `<button type="button" class="mbtn small" data-action="edit-entry" data-id="${esc(e.id)}">수정</button>
+           <button type="button" class="mbtn small danger" data-action="del-entry" data-id="${esc(e.id)}">삭제</button>`}
+      </span></div>`;
+  }).join('') : '<div class="day-empty">이 날은 아직 기록이 없어요.</div>';
+}
+
+function resetMoneyForm() {
+  mon.editId = null;
+  mon.amount = '';
+  mon.memo = '';
+  mon.categoryId = FALLBACK_CAT[mon.type];
+}
+
+function refreshMoneyForm() {
+  const editing = !!mon.editId;
+  $('#monFormTitle').textContent = editing ? '기록 수정' : (mon.type === 'in' ? '새 수입' : '새 지출');
+  $('#monFormHead').classList.toggle('editing', editing);
+  $('#cancelEntryEdit').hidden = !editing;
+  $('#typeOut').classList.toggle('on', mon.type === 'out');
+  $('#typeIn').classList.toggle('on', mon.type === 'in');
+  $('#eAmount').value = mon.amount;
+  $('#eMemo').value = mon.memo;
+  const cats = catsOf(mon.type);
+  if (!cats.some(c => c.id === mon.categoryId)) mon.categoryId = FALLBACK_CAT[mon.type];
+  $('#eCat').innerHTML = cats.map(c =>
+    `<option value="${esc(c.id)}" ${c.id === mon.categoryId ? 'selected' : ''}>${c.emoji} ${esc(c.name)}</option>`).join('');
+}
+
+function openEntryForm() {
+  mon.formOpen = true;
+  resetMoneyForm();
+  renderMoneySheet();
+  setTimeout(() => { const a = $('#eAmount'); if (a) a.focus(); }, 60);
+}
+function closeEntryForm() {
+  mon.formOpen = false;
+  mon.editId = null;
+  resetMoneyForm();
+  renderMoneySheet();
+}
+function cancelEntry() {
+  if (entriesOn(mon.date).length) closeEntryForm();
+  else closeSheet();
+}
+
+function startEntryEdit(id) {
+  const e = state.entries.find(x => x.id === id);
+  if (!e) return;
+  mon.editId = id; mon.formOpen = true;
+  mon.type = e.type; mon.amount = String(e.amount); mon.categoryId = e.categoryId; mon.memo = e.memo;
+  renderMoneySheet();
+}
+
+function saveEntry() {
+  const amount = Math.round(Number($('#eAmount').value));
+  if (!amount || amount < 1) { toast('금액을 적어 주세요.'); $('#eAmount').focus(); return; }
+  const data = {
+    date: mon.date, type: mon.type, amount,
+    categoryId: $('#eCat').value || FALLBACK_CAT[mon.type],
+    memo: $('#eMemo').value.trim().slice(0, 60)
+  };
+  if (mon.editId) {
+    const e = state.entries.find(x => x.id === mon.editId);
+    if (e) Object.assign(e, data);
+    toast('수정했어요.');
+  } else {
+    state.entries.push({ id: uid(), ...data });
+    toast(`${data.type === 'in' ? '수입' : '지출'} ${won(amount)} 추가했어요.`);
+  }
+  save();
+  closeEntryForm();
+  renderAll();
+}
+
+/* 삭제 — 바로 지우고 5초 동안 되돌릴 수 있어요 */
+function deleteEntry(id) {
+  const at = state.entries.findIndex(e => e.id === id);
+  if (at < 0) return;
+  const back = { at, entry: { ...state.entries[at] } };
+  state.entries.splice(at, 1);
+  if (mon && mon.editId === id) { mon.editId = null; mon.formOpen = false; resetMoneyForm(); }
+  save();
+  renderMoneySheet();
+  renderAll();
+  toast('삭제했어요.', {
+    label: '실행 취소', ms: 5000,
+    fn: () => {
+      if (state.entries.some(e => e.id === back.entry.id)) return;
+      state.entries.splice(Math.min(back.at, state.entries.length), 0, back.entry);
+      save(); renderMoneySheet(); renderAll();
+      toast('되돌렸어요.');
+    }
+  });
+}
+
+/* 자동 알바비는 지우는 게 아니라 "이번 달만 숨기기" */
+function hideAuto(id) {
+  if (state.hiddenAuto.includes(id)) return;
+  state.hiddenAuto.push(id);
+  save();
+  renderMoneySheet();
+  renderAll();
+  toast('이번 달 알바비를 숨겼어요.', {
+    label: '실행 취소', ms: 5000,
+    fn: () => {
+      state.hiddenAuto = state.hiddenAuto.filter(x => x !== id);
+      save(); renderMoneySheet(); renderAll();
+      toast('다시 보여요.');
+    }
+  });
+}
+
+/* 오늘의 메모는 적는 대로 저장 */
+function saveDayMemo(text) {
+  const t = text.slice(0, 500);
+  if (t.trim()) state.dayMemos[mon.date] = t;
+  else delete state.dayMemos[mon.date];
+  save();
+}
+
+/* ============================================
+   카테고리 관리
+   ============================================ */
+function catsSheetHTML() {
+  const row = c => {
+    const used = state.entries.filter(e => e.categoryId === c.id).length;
+    const fixed = c.id === 'etc-out' || c.id === 'etc-in';
+    return `<div class="day-row">
+      <span class="cat-dot" style="background:${c.color}">${c.emoji}</span>
+      <span class="dr-main"><b>${esc(c.name)}</b>${fixed ? '<span class="jbadge">기본</span>' : ''}
+        <small>기록 ${used}개</small></span>
+      <span class="dr-btns">
+        <button type="button" class="mbtn small" data-action="edit-cat" data-id="${esc(c.id)}">수정</button>
+        ${fixed ? '' : `<button type="button" class="mbtn small danger" data-action="del-cat" data-id="${esc(c.id)}">삭제</button>`}
+      </span></div>`;
+  };
+  const group = (type, label) => `
+    <div class="form-head">${label}</div>
+    <div class="day-list">${catsOf(type).map(row).join('') || '<div class="day-empty">없어요.</div>'}</div>
+    <button type="button" class="mbtn addbtn" data-action="add-cat" data-type="${type}">+ ${label} 카테고리 추가</button>`;
+  return `
+    <div class="sheet-head" id="sheetTitle">카테고리 관리</div>
+    <div class="sheet-body">
+      ${group('out', '지출')}
+      ${group('in', '수입')}
+      <p class="hint" style="margin-left:0">카테고리를 지우면 그 기록은 "기타"로 옮겨져요. 기본 "기타"는 지울 수 없어요.</p>
+    </div>
+    <div class="sheet-foot">
+      <span class="spacer"></span>
+      <button type="button" class="mbtn blue" data-action="close-sheet">닫기</button>
+    </div>`;
+}
+function openCatsSheet() { openSheet('cats', catsSheetHTML()); }
+function refreshCatsSheet() { if (sheetKind === 'cats') sheetEl.innerHTML = catsSheetHTML(); }
+
+let catEdit = null;
+function openCatSheet(id, type) {
+  const c = id ? catById(id) : null;
+  catEdit = { id: c ? c.id : null, type: c ? c.type : (type === 'in' ? 'in' : 'out'),
+    emoji: c ? c.emoji : '✨', color: c ? c.color : nextTagColor() };
+  openSheet('cat', `
+    <div class="sheet-head" id="sheetTitle">${c ? '카테고리 수정' : '새 카테고리'}</div>
+    <form class="sheet-body" id="catForm" autocomplete="off">
+      <div class="frow"><label for="cName">이름</label>
+        <input type="text" id="cName" maxlength="12" placeholder="예: 편의점" value="${c ? esc(c.name) : ''}"></div>
+      <div class="frow top"><span class="lbl">그림</span>
+        <div class="emojis" role="radiogroup" aria-label="이모지">
+          ${CAT_EMOJI.map(e => `<button type="button" class="emo ${e === catEdit.emoji ? 'on' : ''}" data-action="pick-emoji" data-emoji="${e}" role="radio" aria-checked="${e === catEdit.emoji}">${e}</button>`).join('')}
+        </div></div>
+      <div class="frow top"><span class="lbl">색</span>
+        <div class="swatches" role="radiogroup" aria-label="색">
+          ${TAGS.map(t => `<button type="button" class="sw ${t.color === catEdit.color ? 'on' : ''}" style="background:${t.color}" data-action="pick-cat-color" data-color="${t.color}" role="radio" aria-checked="${t.color === catEdit.color}" title="${t.name}" aria-label="${t.name}"></button>`).join('')}
+        </div></div>
+    </form>
+    <div class="sheet-foot">
+      <span class="spacer"></span>
+      <button type="button" class="mbtn" data-action="back-to-cats">취소</button>
+      <button type="submit" class="mbtn blue" form="catForm">저장</button>
+    </div>`);
+  setTimeout(() => { const n = $('#cName'); if (n && window.innerWidth > 760) n.focus(); }, 320);
+}
+
+function submitCat() {
+  const name = $('#cName').value.trim();
+  if (!name) { toast('카테고리 이름을 적어 주세요.'); $('#cName').focus(); return; }
+  if (catEdit.id) {
+    Object.assign(catById(catEdit.id), { name: name.slice(0, 12), emoji: catEdit.emoji, color: safeColor(catEdit.color) });
+  } else {
+    state.categories.push({ id: uid(), name: name.slice(0, 12), emoji: catEdit.emoji, color: safeColor(catEdit.color), type: catEdit.type });
+  }
+  save();
+  openCatsSheet();
+  renderAll();
+  toast(`"${name}" 저장했어요.`);
+}
+
+function deleteCat(id) {
+  const c = catById(id);
+  if (!c || c.id === 'etc-out' || c.id === 'etc-in') return;
+  const used = state.entries.filter(e => e.categoryId === id).length;
+  if (used && !confirm(`"${c.name}"을(를) 지울까요?\n이 카테고리의 기록 ${used}개는 "기타"로 옮겨져요.`)) return;
+  const back = { cat: { ...c }, at: state.categories.indexOf(c), moved: state.entries.filter(e => e.categoryId === id).map(e => e.id) };
+  state.categories = state.categories.filter(x => x.id !== id);
+  state.entries.forEach(e => { if (e.categoryId === id) e.categoryId = FALLBACK_CAT[e.type]; });
+  save(); refreshCatsSheet(); renderAll();
+  toast(`"${c.name}" 지웠어요.${used ? ` 기록 ${used}개는 "기타"로 옮겼어요.` : ''}`, {
+    label: '실행 취소', ms: 5000,
+    fn: () => {
+      if (catById(back.cat.id)) return;
+      state.categories.splice(Math.min(back.at, state.categories.length), 0, back.cat);
+      const ids = new Set(back.moved);
+      state.entries.forEach(e => { if (ids.has(e.id)) e.categoryId = back.cat.id; });
+      save(); refreshCatsSheet(); renderAll();
+      toast('되돌렸어요.');
+    }
+  });
+}
+
 /* ---------- 알바 관리 시트 ---------- */
 /* 알바를 한곳에서 보고 바로 수정·삭제할 수 있는 창이에요. */
 const shiftCount = jobId => state.shifts.filter(s => s.jobId === jobId).length;
@@ -1070,6 +1582,16 @@ function openJobSheet(id) {
           </div>
           <span class="check-hint">합계(기본급 + 주휴수당)에서 빼요. 둘 다 체크해도 돼요.</span>
         </div></div>
+      <div class="frow"><span class="lbl">월급날</span>
+        <div class="fctl">매달
+          <input type="number" id="jPayday" min="1" max="31" step="1" inputmode="numeric" style="width:62px;text-align:right"
+            aria-label="월급날" value="${j ? j.payday : 10}">일,
+          <select id="jPayMonth" aria-label="어느 달 근무분">
+            <option value="prev" ${!j || j.payMonth !== 'same' ? 'selected' : ''}>지난달 근무분</option>
+            <option value="same" ${j && j.payMonth === 'same' ? 'selected' : ''}>이번달 근무분</option>
+          </select>
+        </div></div>
+      <p class="hint">월급날에 실수령액이 가계부에 "알바비" 수입으로 자동으로 떠요. 그 달에 없는 날짜면 말일에 떠요.</p>
       <p class="hint">2026년 최저시급은 10,320원이에요.</p>
     </form>
     <div class="sheet-foot">
@@ -1092,7 +1614,9 @@ function submitJob() {
   const insurance = $('#jIns').checked;
   const taxRate = safeRate($('#jTaxRate').value, 3.3);
   const insuranceRate = safeRate($('#jInsRate').value, 10);
-  const ded = { tax, taxRate, insurance, insuranceRate };
+  const payday = Math.min(31, Math.max(1, Math.round(Number($('#jPayday').value)) || 10));
+  const payMonth = $('#jPayMonth').value === 'same' ? 'same' : 'prev';
+  const ded = { tax, taxRate, insurance, insuranceRate, payday, payMonth };
   const first = state.jobs.length === 0;
   if (jobEdit.id && jobById(jobEdit.id)) {
     Object.assign(jobById(jobEdit.id), { name, wage, color, weeklyBonus, ...ded });
@@ -1351,8 +1875,8 @@ let swipe = null, clickGuard = 0;
 /* 밀거나 길게 누른 직후에 따라오는 가짜 탭을 한 번 무시해요 */
 const skipNextClick = () => { clickGuard = Date.now(); };
 const canSwipeMonth = () =>
-  ui.view === 'calendar' && ui.mode === 'grid' &&
-  sheetWrap.hidden && !!state.jobs.length;
+  sheetWrap.hidden &&
+  (ui.app === 'money' || (ui.view === 'calendar' && ui.mode === 'grid' && !!state.jobs.length));
 
 scroller.addEventListener('touchstart', e => {
   clickGuard = 0;
@@ -1444,7 +1968,16 @@ function goMonth(y, m) {
   slideContent(dir);
 }
 function goView(v) {
+  ui.app = 'work'; saveTab();
   ui.view = v;
+  if (isNarrow()) closeSidebar();
+  scroller.scrollTop = 0;
+  renderAll();
+}
+function goApp(app) {
+  if (ui.app === app) return;
+  ui.app = app === 'money' ? 'money' : 'work';
+  saveTab();
   if (isNarrow()) closeSidebar();
   scroller.scrollTop = 0;
   renderAll();
@@ -1465,6 +1998,8 @@ document.addEventListener('click', e => {
   switch (t.dataset.action) {
     /* 사이드바 */
     case 'view': goView(t.dataset.view); break;
+    case 'go-money': goApp('money'); break;
+    case 'go-app': goApp(t.dataset.app); break;
     case 'filter':
       ui.filter = id || null;
       goView('calendar');
@@ -1537,6 +2072,34 @@ document.addEventListener('click', e => {
       break;
     }
     case 'open-day': openDay(t.dataset.date); break;
+    /* 가계부 */
+    case 'open-money-day': openMoneyDay(t.dataset.date); break;
+    case 'open-entry-form': openEntryForm(); break;
+    case 'cancel-entry': cancelEntry(); break;
+    case 'cancel-entry-edit': resetMoneyForm(); renderMoneySheet(); break;
+    case 'entry-type':
+      mon.type = t.dataset.type === 'in' ? 'in' : 'out';
+      mon.categoryId = FALLBACK_CAT[mon.type];
+      refreshMoneyForm();
+      break;
+    case 'edit-entry': startEntryEdit(id); break;
+    case 'del-entry': deleteEntry(id); break;
+    case 'save-entry': saveEntry(); break;
+    case 'hide-auto': hideAuto(id); break;
+    /* 카테고리 */
+    case 'manage-cats': closePanels(); openCatsSheet(); break;
+    case 'add-cat': openCatSheet(null, t.dataset.type); break;
+    case 'edit-cat': openCatSheet(id); break;
+    case 'del-cat': deleteCat(id); break;
+    case 'back-to-cats': openCatsSheet(); break;
+    case 'pick-emoji':
+      catEdit.emoji = t.dataset.emoji;
+      $$('.emo').forEach(b => { const on = b.dataset.emoji === catEdit.emoji; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
+      break;
+    case 'pick-cat-color':
+      catEdit.color = t.dataset.color;
+      $$('.sw').forEach(b => { const on = b.dataset.color === catEdit.color; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
+      break;
     case 'open-shift': {
       const s = state.shifts.find(x => x.id === id);
       if (s) openDay(s.date, s.id);
@@ -1595,6 +2158,13 @@ document.addEventListener('click', e => {
 
 document.addEventListener('input', e => {
   const t = e.target;
+  if (sheetKind === 'money' && mon) {
+    if (t.id === 'eAmount') mon.amount = t.value;
+    else if (t.id === 'eMemo') mon.memo = t.value;
+    else if (t.id === 'eCat') mon.categoryId = t.value;
+    else if (t.id === 'dayMemo') saveDayMemo(t.value);
+    return;
+  }
   if (sheetKind === 'day' && pop) {
     if (t.id === 'fJob') pop.jobId = t.value;
     else if (t.id === 'fStart') pop.start = t.value;
@@ -1618,6 +2188,7 @@ document.addEventListener('change', e => {
 
 document.addEventListener('submit', e => {
   if (e.target.id === 'jobForm') { e.preventDefault(); submitJob(); }
+  if (e.target.id === 'catForm') { e.preventDefault(); submitCat(); }
 });
 
 document.addEventListener('keydown', e => {
@@ -1634,7 +2205,11 @@ document.addEventListener('keydown', e => {
   }
 });
 
-window.addEventListener('resize', () => { if (!isNarrow()) closeSidebar(); });
+let wasNarrow = isNarrow();
+window.addEventListener('resize', () => {
+  if (!isNarrow()) closeSidebar();
+  if (isNarrow() !== wasNarrow) { wasNarrow = isNarrow(); if (ui.app === 'money') renderContent(); }
+});
 
 /* 토스트 — action을 주면 누를 수 있는 버튼이 같이 떠요 ({label, fn, ms}) */
 let toastTimer = null, toastFn = null;
