@@ -19,8 +19,11 @@ const TAGS = [                             // Finder 태그 색, 등록 순서�
   { name: 'Purple', color: '#a453d6' },
   { name: 'Gray', color: '#7b7b7b' }
 ];
-const WD_MON = ['월', '화', '수', '목', '금', '토', '일'];   // 월요일 시작 (주휴 기준과 같게)
-const WD_SUN = ['일', '월', '화', '수', '목', '금', '토'];   // Date.getDay() 순서
+const WD_SUN = ['일', '월', '화', '수', '목', '금', '토'];   // Date.getDay() 순서 (달력은 이 순서)
+/* 달력은 전부 일요일 시작 — 일요일은 빨강, 토요일은 파랑 (계산과는 상관없는 표시) */
+const wdClass = wd => wd === 0 ? 'sun' : wd === 6 ? 'sat' : '';
+const calHead = (tag, cls) => WD_SUN.map((w, i) =>
+  `<${tag} class="${cls} ${wdClass(i)}">${w}</${tag}>`).join('');
 
 /* ---------- 아이콘 (얇은 선) ---------- */
 const ICONS = {
@@ -1029,14 +1032,14 @@ function renderCalendar() {
 }
 
 function calendarGrid(y, m) {
-  const first = new Date(y, m, 1), offset = (first.getDay() + 6) % 7, days = new Date(y, m + 1, 0).getDate();
+  const first = new Date(y, m, 1), offset = first.getDay(), days = new Date(y, m + 1, 0).getDate();
   let h = '<div class="cal">';
-  WD_MON.forEach(w => { h += `<div class="cal-wd">${w}</div>`; });
+  h += calHead('div', 'cal-wd');
   for (let i = 0; i < offset; i++) h += '<div class="cell dim"></div>';
   for (let d = 1; d <= days; d++) {
     const key = ymd(y, m, d), wd = (offset + d - 1) % 7;
     const ss = shiftsOn(key, ui.filter);
-    const cls = ['cell', 'day', wd >= 5 ? 'wkend' : '', key === TODAY ? 'today' : ''].join(' ');
+    const cls = ['cell', 'day', wdClass(wd), key === TODAY ? 'today' : ''].join(' ');
     const evs = ss.map(s => {
       const j = jobById(s.jobId), min = netMinutes(s);
       return `<div class="ev" title="${esc(j.name)} ${s.start}~${s.end} (${fmtH(min)})"><span class="dot" style="background:${j.color}"></span>${shortH(min)}</div>`;
@@ -1098,14 +1101,14 @@ function budgetBar(y, m, mm) {
 }
 
 function moneyGrid(y, m, mm) {
-  const first = new Date(y, m, 1), offset = (first.getDay() + 6) % 7, days = new Date(y, m + 1, 0).getDate();
+  const first = new Date(y, m, 1), offset = first.getDay(), days = new Date(y, m + 1, 0).getDate();
   let h = '<div class="cal money">';
-  WD_MON.forEach(w => { h += `<div class="cal-wd">${w}</div>`; });
+  h += calHead('div', 'cal-wd');
   for (let i = 0; i < offset; i++) h += '<div class="cell dim"></div>';
   for (let d = 1; d <= days; d++) {
     const key = ymd(y, m, d), wd = (offset + d - 1) % 7;
     const sum = mm.byDay.get(key);
-    const cls = ['cell', 'day', wd >= 5 ? 'wkend' : '', key === TODAY ? 'today' : ''].join(' ');
+    const cls = ['cell', 'day', wdClass(wd), key === TODAY ? 'today' : ''].join(' ');
     let evs = '';
     let label = '';
     if (sum && sum.in) { evs += `<div class="mv in">+${moneyShort(sum.in)}</div>`; label += `, 수입 ${won(sum.in)}`; }
@@ -1284,7 +1287,7 @@ function openSavingSheet(id) {
           placeholder="300000" value="${v ? v.amount : ''}"> 원</div></div>
       <div class="frow wide" id="wdayRow"><span class="lbl">무슨 요일에 넣나요?</span>
         <div class="seg small wdays" role="radiogroup" aria-label="요일">
-          ${WD_MON.map(w => { const i = WD_SUN.indexOf(w); return `<button type="button" class="seg-btn" data-action="saving-weekday" data-wd="${i}" role="radio" aria-checked="false">${w}</button>`; }).join('')}
+          ${WD_SUN.map((w, i) => `<button type="button" class="seg-btn ${wdClass(i)}" data-action="saving-weekday" data-wd="${i}" role="radio" aria-checked="false">${w}</button>`).join('')}
         </div></div>
       <div class="frow" id="stepRow"><label for="vStep">늘리기</label>
         <div class="fctl">매주 <input type="number" id="vStep" min="0" step="1" inputmode="numeric" style="width:100px;text-align:right"
@@ -1800,13 +1803,13 @@ function renderPicker() {
   if (!pop.showCopy) return;
   const y = pop.py, m = pop.pm;
   const baseWd = parseYmd(pop.date).getDay();
-  const first = new Date(y, m, 1), offset = (first.getDay() + 6) % 7, days = new Date(y, m + 1, 0).getDate();
+  const first = new Date(y, m, 1), offset = first.getDay(), days = new Date(y, m + 1, 0).getDate();
   const worked = new Set(state.shifts.map(s => s.date));
-  let g = WD_MON.map(w => `<span class="pw">${w}</span>`).join('');
+  let g = calHead('span', 'pw');
   for (let i = 0; i < offset; i++) g += '<span></span>';
   for (let d = 1; d <= days; d++) {
     const key = ymd(y, m, d), wd = (offset + d - 1) % 7, isBase = key === pop.date;
-    const cls = ['pk-day', wd >= 5 ? 'wkend' : '', worked.has(key) ? 'has' : '', pop.copy.has(key) ? 'picked' : '', isBase ? 'base' : ''].join(' ');
+    const cls = ['pk-day', wdClass(wd), worked.has(key) ? 'has' : '', pop.copy.has(key) ? 'picked' : '', isBase ? 'base' : ''].join(' ');
     g += `<button type="button" class="${cls}" ${isBase ? 'disabled title="기준 날짜"' : `data-action="pick-day" data-date="${key}"`}
       aria-pressed="${pop.copy.has(key)}" aria-label="${m + 1}월 ${d}일">${d}</button>`;
   }

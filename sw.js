@@ -4,7 +4,7 @@
    - 글꼴 같은 외부 파일: 저장해둔 걸 먼저 (cache-first)
    파일을 바꾸면 VERSION만 올려 주세요.
    ============================================ */
-const VERSION = 'wallet-v18';  // v18: 저축 납입 주기(매일·매주·매달)
+const VERSION = 'wallet-v19';  // v19: 달력을 일요일 시작으로
 const APP_SHELL = [
   './',
   './index.html',
