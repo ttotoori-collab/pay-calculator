@@ -66,6 +66,7 @@
   --waste:#8e3b94;
   --sun:#c0362f;    /* 달력 일요일 */
   --sat:#1b6fb0;    /* 달력 토요일 */
+  --future:rgba(13,79,124,.055);   /* 오늘 이후 칸 */
   --seg-bg:rgba(13,79,124,.09);
   --seg-on:#fff;
   --ring:rgba(27,143,176,.3);
@@ -140,6 +141,7 @@
   --waste:#f3a8ff;
   --sun:#ff8a8a;
   --sat:#7cc4ff;
+  --future:rgba(0,0,0,.16);
   --seg-bg:rgba(124,247,255,.1);
   --seg-on:#27456f;
   --ring:rgba(124,247,255,.35);
@@ -513,6 +515,9 @@ input:focus,select:focus{outline:3px solid var(--ring);border-color:var(--blue)}
 .grand span{color:var(--text2);font-size:12.5px}
 .grand b{font-size:19px;font-weight:700;color:var(--total);font-variant-numeric:tabular-nums}
 .grand-sub{margin:2px 8px 0;text-align:right;font-size:11.5px;color:var(--gray);font-variant-numeric:tabular-nums}
+.soon{color:var(--gray);font-weight:400}
+.money-sum .soon{display:block;font-size:11px;margin-top:1px}
+.grand-sub .soon{margin-left:4px}
 /* 공제 줄 (세금 · 4대보험 · 실수령액) */
 .ftable.sum tr.ded td{
   background:none !important;padding:1px 8px;border:0;
@@ -632,6 +637,10 @@ input:focus,select:focus{outline:3px solid var(--ring);border-color:var(--blue)}
 .mv.out{color:var(--expense)}
 .mv.memo{color:var(--gray2);font-weight:400}
 .mv .wdot{font-style:normal;font-size:9px;margin-left:2px;vertical-align:1.5px}
+/* 아직 안 들어온 돈 — 흐리게 + 점선 밑줄 + 앞에 "예정" */
+.mv.soon{opacity:.5;text-decoration:underline dotted;text-underline-offset:2px}
+.mv.soon i{font-style:normal;font-size:9px;font-weight:600;margin-right:3px;letter-spacing:-.3px}
+.cell.day.future{background:var(--future)}
 
 /* 월 요약 */
 .money-sum td{font-size:13px}
@@ -680,6 +689,8 @@ input:focus,select:focus{outline:3px solid var(--ring);border-color:var(--blue)}
 
 /* 낭비(안 써도 됐던 돈) 표시 — 글자는 살짝 흐리게, 금액 옆에 작은 💸 */
 .day-row.wasted .dr-main b{opacity:.7}
+.day-row.soon .amt{text-decoration:underline dotted;text-underline-offset:2px}
+.jbadge.soon{background:var(--soft-2);color:var(--gray);margin-left:5px;vertical-align:1px}
 .day-row .amt .wmark{font-style:normal;font-size:10.5px;margin-left:3px;vertical-align:1px}
 .day-row.wasted .amt.out{color:var(--waste)}
 .wbtn{
@@ -776,7 +787,8 @@ input:focus,select:focus{outline:3px solid var(--ring);border-color:var(--blue)}
 .ch-bar,.ch-arc{cursor:pointer}
 @media (hover:hover){.ch-bar:hover,.ch-arc:hover{opacity:.75}}
 .ch-labels{display:grid;grid-template-columns:repeat(6,1fr);margin-top:4px;font-size:11px;color:var(--gray);text-align:center}
-.ch-legend{display:flex;gap:12px;margin-top:8px;font-size:11.5px;color:var(--gray)}
+.ch-legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;font-size:11.5px;color:var(--gray)}
+.ch-legend i.hatch{background:repeating-linear-gradient(45deg,var(--gray) 0 2px,transparent 2px 4px);opacity:.75}
 .ch-legend.wrap{flex-wrap:wrap;gap:6px 10px;justify-content:center}
 .ch-legend span{display:flex;align-items:center;gap:4px}
 .ch-legend i{width:9px;height:9px;border-radius:2px;flex:none}
@@ -921,6 +933,9 @@ input:focus,select:focus{outline:3px solid var(--ring);border-color:var(--blue)}
   .ftable.sum.money-sum tbody tr td{display:block;grid-column:auto;margin:0;font-weight:inherit}
   .ftable.sum.money-sum tbody td::before{content:none}
   .daymemo{font-size:16px}   /* 아이폰에서 확대되지 않게 */
+  /* 좁은 칸에서 "예정 +22.0만"이 잘리지 않게 줄바꿈 허용 */
+  .mv.soon{white-space:normal;line-height:1.25}
+  .mv.soon i{font-size:8.5px;margin-right:2px}
   /* 가계부 2단계 */
   .charts{grid-template-columns:1fr;gap:20px}
   .donut-wrap{max-width:220px;margin:0 auto}
